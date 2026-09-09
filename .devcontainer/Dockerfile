@@ -109,6 +109,25 @@ RUN sed -i 's/\r$//' /usr/local/bin/init-firewall.sh /usr/local/bin/prepare-sand
     && chmod 755    /usr/local/bin/init-firewall.sh /usr/local/bin/prepare-sandbox /usr/local/bin/run-agent \
         /usr/local/bin/run-copilot
 
+# Copilot guardrail installed as MACHINE POLICY, not user config. Policy hooks load
+# before all others, cannot be disabled by `disableAllHooks`, and live outside the
+# agent's reach — which is what makes run-copilot's --allow-all-tools defensible.
+# It denies obfuscated commands and closes the `git -C . push` hole that the
+# --deny-tool prefix rules do not catch.
+#
+# The ownership and mode below are a REQUIREMENT, not hygiene: on POSIX the CLI
+# ignores any policy file that is not root-owned or that is group/world-writable,
+# and it does so silently. A malformed or rejected policy file fails OPEN.
+COPY container/guard-shell-command.js /usr/local/lib/copilot-guard/guard-shell-command.js
+COPY container/copilot-policy.json    /etc/github-copilot/policy.d/10-guardrails.json
+RUN sed -i 's/\r$//' /usr/local/lib/copilot-guard/guard-shell-command.js \
+        /etc/github-copilot/policy.d/10-guardrails.json \
+    && chown root:root /usr/local/lib/copilot-guard/guard-shell-command.js \
+        /etc/github-copilot/policy.d/10-guardrails.json \
+    && chmod 0644 /etc/github-copilot/policy.d/10-guardrails.json \
+    && chmod 0755 /usr/local/lib/copilot-guard/guard-shell-command.js \
+    && node --check /usr/local/lib/copilot-guard/guard-shell-command.js
+
 # Claude Code BASELINE (native installer; autoupdate disabled — runtime firewall
 # would block it). prepare-sandbox re-installs the latest CLI and stages it on
 # /workspace/.agent-cli each sandbox setup; run-agent prefers that copy — this

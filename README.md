@@ -265,6 +265,8 @@ VS Code option: install the Dev Containers extension, set `dev.containers.docker
 | `container/run-agent.sh` → `run-agent` | Lockdown (Anthropic) → purge creds → start Claude |
 | `container/run-copilot.sh` → `run-copilot` | Lockdown (Copilot hosts; `--login` adds github.com once) → purge creds → start Copilot CLI |
 | `container/copilot-settings.json` | Seeded model default (claude-opus-4-8) for `~/.copilot` |
+| `container/copilot-policy.json` → `/etc/github-copilot/policy.d/10-guardrails.json` | Machine-policy `preToolUse` hook registration (root-owned; survives `disableAllHooks`) |
+| `container/guard-shell-command.js` | The guardrail itself: denies obfuscated commands and `git push`/remote mutation in any spelling |
 | `container/certs/` | (generated) corp root CAs staged by new-sandbox.sh |
 | `overlay/CLAUDE.md` | Sandbox-adapted instructions the agent boots with |
 | `overlay/.claude/settings.json` | bypassPermissions + deny rules + native sandbox |

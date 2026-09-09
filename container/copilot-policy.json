@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "hooks": {
+    "preToolUse": [
+      {
+        "type": "command",
+        "matcher": "bash|powershell|local_shell|shell",
+        "exec": "/usr/bin/node",
+        "args": ["/usr/local/lib/copilot-guard/guard-shell-command.js"],
+        "timeoutSec": 30
+      }
+    ]
+  }
+}
