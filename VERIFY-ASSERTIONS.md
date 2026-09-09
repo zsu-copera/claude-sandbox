@@ -141,9 +141,23 @@ opens the network if it succeeds.
 
 ## Notes for whoever implements this
 
+- **The S-series is implemented** in `verify-scaffold.sh` (2026-09-09). The P/A/G/X series are
+  not. Current result on a clean tree: 19 pass, 1 fail (S7, the I1/I2/I3 regression test), 1
+  warn (S11, tracking E1a), 2 skip (no shellcheck, no VERSION).
 - S1 is the assertion most likely to be written wrongly. Two tools lie here: `grep -c $'\r'`
   can match every line in Git Bash, and `file(1)` omits its CRLF note in some builds. Count
-  bytes.
+  bytes — `tr -d '\015' < f | cmp -s - f` is the cheap form.
+- **Any assertion that greps source for a forbidden construct must exclude the files that
+  document the prohibition — including the verifier itself.** This bit twice while implementing
+  the S-series: S15 failed on the Dockerfile comment explaining why `NOPASSWD:ALL` is wrong, and
+  S14 failed on `verify-scaffold.sh`'s own success message containing the words "sudo call
+  site". Strip comment lines, and exclude `AGENTS.md`, this file, and the verifier.
+- Enumerate files with `git ls-files --cached --others --exclude-standard`. Plain `git ls-files`
+  omits a newly written file, which is exactly when a CRLF or syntax error would slip past.
+- Runtime is dominated by process creation, not work. Compute file lists once, prefer one grep
+  across many files to one grep per file, and never recurse a sibling repo — asking
+  `git -C ../prj ls-files '*pom.xml'` for S19 rather than walking `../prj` cut the total runtime
+  by a third on its own.
 - Nothing in this list needs network access except A3–A7 and P8.
 - Keep each assertion independent — no shared state, no ordering dependency — so a failure
   localizes. `set -e` is wrong for this script; collect results and exit at the end.

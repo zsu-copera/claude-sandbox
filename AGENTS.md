@@ -106,10 +106,11 @@ before touching the code.
 Most of this scaffold cannot be checked by reading it. Work down this ladder and stop at the
 cheapest rung that actually covers your change.
 
-1. **Static checks — seconds, no container.** `bash -n` on every script, zero CR bytes, JSON
-   parses, no personal paths, the isolation invariants above still present in the source. The
-   assertion list is `VERIFY-ASSERTIONS.md`; the host-side subset is what you should be running
-   after every edit.
+1. **Static checks — no container.** Run `./verify-scaffold.sh`. It checks line endings, shell
+   syntax, JSON validity, the absence of personal paths, and that every isolation invariant
+   above is still present in the source. **Run it after every edit**, and expect a clean run to
+   report `19 passed, 1 failed` — S7 fails on purpose until findings I1/I2/I3 are fixed, and
+   S11 warns until E1 is. A *new* failure is yours.
 2. **Container, already built.** An image (`localhost/pera-sandbox`) and an assembled, warmed
    sandbox (`~/pera-sandbox` inside the `centos-9` WSL distro) already exist, so in-container
    assertions run in seconds rather than after a 30–60 minute prepare. Anything touching the
