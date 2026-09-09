@@ -1,0 +1,32 @@
+# Line endings: LF everywhere, enforced.
+#
+# This is not a style preference. The scaffold is consumed by bash inside WSL and by the
+# container build, and CRLF breaks it outright — a shebang or `set -euo pipefail` with a
+# trailing \r fails to parse. This has already happened once: the copy of this scaffold in the
+# Documentation repo was handing out a CRLF `new-sandbox.sh` on a fresh clone, because that
+# repo is checked out with core.autocrlf=true on Windows.
+#
+# core.autocrlf=true is set globally on this machine, so without these rules the same bug
+# arrives here on the next clone. The rules below win over that setting.
+#
+# `container/*.sh` are additionally \r-stripped by the Dockerfile, but `new-sandbox.sh` runs on
+# the host via `bash new-sandbox.sh` and has no such safety net. It is the one that bites.
+
+* text=auto eol=lf
+
+# Spelled out for the load-bearing files, so the intent survives someone simplifying the rule
+# above. VERIFY-ASSERTIONS.md S1 checks these for CR bytes.
+*.sh              text eol=lf
+Dockerfile        text eol=lf
+dockerignore      text eol=lf
+*.json            text eol=lf
+*.md              text eol=lf
+
+# PowerShell only ever runs on Windows, which is fine with LF; kept uniform so there is exactly
+# one rule to remember rather than an exception to look up.
+*.ps1             text eol=lf
+
+# Never normalize these — binary or generated.
+*.crt             binary
+*.png             binary
+*.tar.gz          binary

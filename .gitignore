@@ -1,0 +1,32 @@
+# Corporate root CAs, staged per machine by new-sandbox.sh from the WSL host's trust anchors.
+# Generated, machine-specific, and not ours to redistribute — never commit them.
+container/certs/
+
+# Nexus credentials staged for the prepare phase. new-sandbox.sh writes these into the
+# assembled sandbox, not here, but an accidental copy into the scaffold must not be committable.
+.secrets/
+**/settings.xml
+**/npmrc
+.npmrc
+
+# Per-developer Claude Code session state for working ON this scaffold. Not part of the
+# scaffold. Note this is NOT overlay/.claude/settings.json, which IS shipped — that one is the
+# payload deployed into an assembled sandbox and must stay tracked.
+.claude/settings.local.json
+.claude/local/
+
+# Build and agent artifacts, should any land here.
+.agent-cli/
+.node-cache/
+.m2/
+node_modules/
+target/
+dist/
+
+# Editor and OS noise.
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db

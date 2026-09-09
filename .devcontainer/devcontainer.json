@@ -1,0 +1,34 @@
+{
+    "name": "PERA Claude Sandbox",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "context": ".."
+    },
+    // NET_ADMIN/NET_RAW are required by init-firewall.sh (iptables + ipset).
+    // --userns=keep-id (rootless podman): maps host uid 1000 -> container vscode (1000)
+    // so the bind-mounted workspace and .secrets are readable/writable.
+    "runArgs": [
+        "--cap-add=NET_ADMIN",
+        "--cap-add=NET_RAW",
+        "--userns=keep-id"
+    ],
+    "workspaceMount": "source=${localWorkspaceFolder},target=/workspace,type=bind",
+    "workspaceFolder": "/workspace",
+    "mounts": [
+        // Agent auth/config persists across container rebuilds (one volume per agent;
+        // plain `podman run` sessions mount only the volume for the agent being run)
+        "source=pera-claude-config,target=/home/vscode/.claude,type=volume",
+        "source=pera-copilot-config,target=/home/vscode/.copilot,type=volume"
+    ],
+    "containerEnv": {
+        "CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC": "1",
+        "DISABLE_AUTOUPDATER": "1",
+        "CHROME_BIN": "/usr/local/bin/chrome"
+    },
+    // No `sudo chown` of the config volumes: passwordless sudo is scoped to
+    // init-firewall.sh only, and the chown is unnecessary anyway — with
+    // --userns=keep-id, rootless podman creates the volumes as the host user, which
+    // maps to vscode inside, so they arrive already owned and writable.
+    "postCreateCommand": "git config --global --add safe.directory '*'",
+    "remoteUser": "vscode"
+}

@@ -1,0 +1,5 @@
+# Copied to the sandbox root as .dockerignore by New-Sandbox.ps1.
+# The image build only needs the container/ scripts — keep the 1.2 GB of
+# repos, caches, and secrets out of the docker build context.
+*
+!container/

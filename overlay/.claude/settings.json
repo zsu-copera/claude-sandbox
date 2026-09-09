@@ -1,0 +1,25 @@
+{
+    "permissions": {
+        "defaultMode": "bypassPermissions",
+        "deny": [
+            "Bash(git push)",
+            "Bash(git push *)",
+            "Read(//workspace/.secrets/**)",
+            "Read(//home/vscode/.claude/**)"
+        ]
+    },
+    "sandbox": {
+        "enabled": true,
+        "failIfUnavailable": false,
+        "filesystem": {
+            "allowWrite": [
+                "/tmp"
+            ]
+        },
+        "network": {
+            "allowedDomains": [
+                "api.anthropic.com"
+            ]
+        }
+    }
+}
