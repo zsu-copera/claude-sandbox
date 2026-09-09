@@ -20,7 +20,8 @@ CLI, `--allow-all-tools`). Isolation layers:
 3. **Agent-native guardrails** — Claude: settings deny rules **plus a working bubblewrap
    sandbox** on every Bash command (capabilities are dropped before the agent starts, which
    is what bwrap needs — see the FAQ); Copilot: deny-tool/deny-url flags + built-in GitHub
-   MCP disabled. Both agents run without `CAP_NET_ADMIN`, so neither can touch the firewall
+   MCP disabled + a root-owned **policy hook** the agent cannot disable. Both agents run
+   without `CAP_NET_ADMIN`, so neither can touch the firewall
    directly, and sudo is scoped to `init-firewall.sh` rather than `ALL`.
 
 Work never leaves the sandbox on its own: the agent commits **locally only** — the sandbox
@@ -182,6 +183,15 @@ only in intent, not network reach. The no-push barrier is therefore layered abov
 network: built-in github-mcp-server disabled, `git push`/`git remote`/`gh` deny-ruled,
 fetch-tool `--deny-url` on GitHub hosts, **no git credentials in the container** (a
 stray `git push` 401s), no `gh` binary, no SSH keys, no git remotes, human review gate.
+
+Weight those layers correctly. The `--deny-tool` rules match a command-identifier
+**prefix**, so `git push` is denied but `git -C . push` and `env git push` are not
+(verified 2026-09-09, v1.0.83); any global option between `git` and its subcommand
+walks past them. They are kept for the clearer message they give in the common case,
+but the tool-layer control that actually holds is the policy hook at
+`/etc/github-copilot/policy.d/10-guardrails.json` — root-owned, immune to
+`disableAllHooks`, and matching on the whole command string rather than a prefix. The
+credential and remote layers are what make the barrier survive a hook failure.
 This is a meaningfully wider egress surface than Claude's Anthropic-only lockdown — for
 maximum-paranoia overnight runs, prefer `run-agent`. Hostname-level separation would
 require an SNI-aware filtering proxy (squid + owner-match iptables) — a possible future

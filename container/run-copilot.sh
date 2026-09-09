@@ -99,6 +99,16 @@ echo "==> Starting Copilot CLI $(copilot --version 2>/dev/null || echo '(version
 #   --deny-tool 'shell(x y)'    hierarchical command identifiers; :* wildcards args
 #   --deny-url                  blocks the fetch tool from GitHub hosts (CLI's own
 #                               API traffic is not a tool call and is unaffected)
+#
+# The deny-tool SYNTAX was verified against --help, but the BEHAVIOUR was not, and
+# it is weaker than it looks: the rules match a command-identifier PREFIX, so
+# `git push` and `git  push origin main` are denied while `git -C . push` and
+# `env git push` run (verified 2026-09-09, v1.0.83). Any global option between
+# `git` and `push` walks straight past them. They are kept because they give a
+# clearer message for the common case, but the barrier that actually closes the
+# hole is the policy hook baked into the image at
+# /etc/github-copilot/policy.d/10-guardrails.json, which sees the whole command
+# string. Do not treat these flags as the no-push control on their own.
 # Deliberately NOT passed: --allow-all-paths / --allow-all-urls (path verification
 # and URL gating stay on) and --autopilot (add it yourself for headless runs:
 #   run-copilot --autopilot -p "task").
