@@ -223,7 +223,7 @@ if [ -z "$JSON_TOOL" ]; then
     skip S9 "devcontainer.json (JSONC) validity" "node is required to strip comments safely"
 else
     s8_bad=""
-    for f in overlay/.claude/settings.json container/copilot-settings.json; do
+    for f in overlay/.claude/settings.json container/copilot-settings.json container/copilot-policy.json; do
         [ -f "$f" ] || { s8_bad="$s8_bad $f(missing)"; continue; }
         json_valid "$f" || s8_bad="$s8_bad $f"
     done
@@ -402,6 +402,54 @@ else
     warn S23 "container/certs contains files" \
              "corporate root CAs are machine-specific and gitignored; confirm they are untracked"
 fi
+
+# --- S24  Copilot policy-hook chain ---------------------------------------------------------
+# This is the tool-layer control that actually holds. run-copilot.sh starts the CLI with
+# --allow-all-tools, and --deny-tool matches a command-identifier PREFIX, so `git -C . push`
+# and `env git push` walk straight past it (measured 2026-09-09 against v1.0.83). The policy
+# hook matches the whole command string and is root-owned, so the agent cannot remove it.
+#
+# Every link below fails SILENTLY and OPEN, which is why they are asserted rather than trusted:
+# the CLI ignores a policy file that is not root-owned or that is group/world-writable without
+# reporting it, and a policy file it cannot parse simply does not load.
+s24_bad=""
+guard_dest=$(grep -E '^COPY[[:space:]]+container/guard-shell-command\.js' .devcontainer/Dockerfile 2>/dev/null | awk '{print $3}')
+policy_dest=$(grep -E '^COPY[[:space:]]+container/copilot-policy\.json' .devcontainer/Dockerfile 2>/dev/null | awk '{print $3}')
+
+[ -f container/guard-shell-command.js ] || s24_bad="$s24_bad guard-file-missing"
+[ -f container/copilot-policy.json ]    || s24_bad="$s24_bad policy-file-missing"
+[ -n "$guard_dest" ]                    || s24_bad="$s24_bad guard-not-COPYd"
+[ -n "$policy_dest" ]                   || s24_bad="$s24_bad policy-not-COPYd"
+
+# Anywhere other than policy.d and it is ordinary user config the agent can disable.
+case "$policy_dest" in
+    /etc/github-copilot/policy.d/*) : ;;
+    *) s24_bad="$s24_bad policy-dest($policy_dest)" ;;
+esac
+
+# Ownership and mode are a POSIX requirement for policy files, not hygiene.
+grep -q 'chown root:root' .devcontainer/Dockerfile 2>/dev/null || s24_bad="$s24_bad no-chown-root"
+grep -qE 'chmod 0644 .*policy\.d' .devcontainer/Dockerfile 2>/dev/null || s24_bad="$s24_bad no-chmod-0644"
+
+# The registration must name the path the Dockerfile actually installs, or the hook is a no-op.
+if [ -n "$guard_dest" ] && ! grep -qF "$guard_dest" container/copilot-policy.json 2>/dev/null; then
+    s24_bad="$s24_bad policy-points-elsewhere"
+fi
+
+# The rule that closes the --deny-tool gap, and the event it must be registered on.
+grep -q 'git-push' container/guard-shell-command.js 2>/dev/null || s24_bad="$s24_bad no-git-push-rule"
+grep -q 'preToolUse' container/copilot-policy.json 2>/dev/null || s24_bad="$s24_bad not-a-preToolUse-hook"
+
+# A syntax error would surface at runtime as every shell command being denied.
+if command -v node >/dev/null 2>&1; then
+    node --check container/guard-shell-command.js >/dev/null 2>&1 || s24_bad="$s24_bad guard-syntax"
+fi
+
+[ -z "$s24_bad" ] && pass S24 "Copilot policy hook shipped, registered, root-owned, and syntax-clean" \
+                  || fail S24 "the Copilot policy-hook chain is broken" \
+                              "broken:$s24_bad
+        This hook is what denies 'git -C . push'; the --deny-tool flags do not. Every failure
+        mode here is silent and fails open — do not relax this assertion to make it pass."
 
 # --- summary --------------------------------------------------------------------------------
 echo

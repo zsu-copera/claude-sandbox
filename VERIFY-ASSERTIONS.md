@@ -66,6 +66,7 @@ delegable to a cheaper agent: it needs no container, so an agent can iterate aga
 | S21 | No staged credential material is present in the scaffold directory | assert `.secrets/` absent and no file matching `settings.xml`/`npmrc` | FAIL |
 | S22 | Every `container/*` file appears in `README.md`'s Files table | cheap guard against doc drift | WARN |
 | S23 | `container/certs/` is absent or empty | it is generated per machine and must never be committed or shipped | WARN |
+| S24 | The Copilot policy-hook chain is intact: both files shipped, `COPY`d into `/etc/github-copilot/policy.d/`, `chown root:root`, policy file not group/world-writable, registration naming the installed guard path, registered on `preToolUse`, `git-push` rule present, `node --check` clean | this hook — not the `--deny-tool` flags — is what denies `git -C . push`; every link fails silently and open, so each is asserted rather than trusted | FAIL |
 
 ## P — Post-prepare, network open (`verify-sandbox.sh --post-prepare`)
 
