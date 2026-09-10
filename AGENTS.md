@@ -13,9 +13,9 @@ everything that matters:
 
 | `overlay/CLAUDE.md` says | Here, on this host |
 |---|---|
-| Network locked to the AI provider's endpoints | Full network access |
-| Never push; repos have no remotes | You are outside any repo by default; `prj`/`Documentation` next door have real remotes |
-| Unit tests only, no DB | No tests here at all — this directory has no build |
+| Provider-oriented network restrictions | Full network access |
+| Never push; sandbox repos have no remotes | This scaffold is its own Git repo; `prj`/`Documentation` next door have real remotes |
+| Application unit tests only, no DB | Scaffold assertions and isolated firewall regressions; no application build |
 | Platform is Linux (bash) | Windows host; PowerShell primary, bash via Git Bash / WSL |
 | `/workspace/prj`, `/workspace/Documentation` | `C:\work\pera\prj`, `C:\work\pera\Documentation` |
 
@@ -45,11 +45,13 @@ procedure, `FAQ.md` for troubleshooting. Do not duplicate their content here.
 
 - **Windows host.** PowerShell is the primary shell; bash is available through Git Bash and
   through `wsl -d centos-9`. Path separators and line endings both matter (below).
-- **Nothing here builds or runs on the host.** The shell scripts execute inside WSL or inside
-  the container. `New-Sandbox.ps1` is the only file intended to run on Windows, and it is
-  unsupported drift — see `README.md`.
-- **This directory is its own git repository** (standalone, `main`, no remote yet — see
-  Promotion). Commit as you go, in small reviewable steps; a change that cannot be described in
+- **Runtime scripts execute inside WSL or the container.** `verify-scaffold.sh` also runs
+  in Git Bash on Windows; `verify-firewall.sh` uses WSL/Podman and disposable containers.
+  `New-Sandbox.ps1` is unsupported drift, not the supported assembly path.
+- **This directory is its own git repository** (standalone, default branch `main`, no remote
+  yet — see Promotion). Inspect the current branch before working; E1 is being maintained
+  on `fix/e1-firewall-transitions`, separately from `main`. Commit as you go, in small
+  reviewable steps; a change that cannot be described in
   one line is usually two changes. `git diff` is the review surface, so leave the tree clean
   when you stop.
 
@@ -100,8 +102,9 @@ before touching the code.
   not incidental: Java ignores `$TMPDIR`, so `java.io.tmpdir` stays `/tmp` and the WAR assembly
   fails on a read-only `/tmp`.
 - **`gh` is deliberately not installed** in the image, and the Copilot entrypoint's
-  `--deny-tool` / `--deny-url` / `--disable-builtin-mcps` flags are the tool-layer barrier that
-  compensates for GitHub's IP ranges being unavoidably reachable in Copilot sessions.
+  `--deny-tool` / `--deny-url` / `--disable-builtin-mcps` flags remain required
+  defense-in-depth for reachable GitHub ranges. They and the policy hook have documented
+  gaps; do not remove them or describe them as complete no-push enforcement.
 
 ## Verifying a change
 
@@ -120,8 +123,11 @@ cheapest rung that actually covers your change.
    firewall, capabilities, or the purge belongs here. Run `bash verify-firewall.sh` inside
    WSL for focused E1 regressions using disposable containers; never run adversarial
    firewall probes against an existing agent session.
-3. **Full rebuild + prepare — 30–60 minutes.** Only for Dockerfile changes or a new Maven
-   profile. Say so rather than doing it unasked.
+3. **Packaging / prepare.** Dockerfile or image-installed script/policy changes require
+   a refreshed build context, rebuilt image and new container for deployment. An image
+   rebuild does not automatically require another prepare of an existing warmed workspace;
+   new build dependencies/profiles or a workspace reset do. Either operation can be
+   expensive; do not perform a full rebuild/prepare unasked.
 
 There is no CI gate. Static assertions and focused firewall regressions do not implement
 the complete P/A/G/X runtime specification in `VERIFY-ASSERTIONS.md`. Editing a script here
@@ -151,9 +157,13 @@ Until that is settled, if you are asked to help promote:
 
 ## Known findings
 
-An audit of this scaffold (2026-09-09) lists 27 findings with file and line references, ranked,
-with a suggested order. Ask for the current link rather than re-deriving its contents. The two
-prior point-in-time reports are in the repo copy alongside the scaffold:
+Start with `SECURITY-REVIEW.md`: it links the original 27-finding audit, records the
+reconciliation plus N1/N2, and tracks E1's implementation commits, evidence and outstanding
+deployment. Keep original findings distinct from later remediation; do not re-audit from
+scratch or mark the deployed image fixed based only on source-mounted regressions.
+`VERIFY-ASSERTIONS.md` distinguishes implemented checks from planned lifecycle coverage.
+The two prior point-in-time reports are in the shared Documentation branch alongside
+the scaffold:
 `Agent_Sandbox_Findings_2026-07-28.md` and `Agent_Sandbox_Verification_2026-08-05.md`.
 
 If you are picking up a finding, the audit says which tier it is in: some are mechanical and

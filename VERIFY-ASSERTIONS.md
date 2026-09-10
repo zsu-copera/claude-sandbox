@@ -14,6 +14,7 @@ assertions are impossible in the wrong context.
 | Script | Mode | Where it runs | Cost |
 |---|---|---|---|
 | `verify-scaffold.sh` | (none) | Windows host, Git Bash or WSL, against this directory | seconds, no container |
+| `verify-firewall.sh` | default / `--callers-only` / `--sudo-only` | WSL/Podman, disposable containers with candidate source | targeted modes are quicker; full suite takes minutes |
 | `verify-sandbox.sh` | `--post-prepare` | End of `prepare.sh`, network still open | seconds |
 | `verify-sandbox.sh` | `--pre-agent` | In `run-agent`/`run-copilot` after lockdown, **still holding capabilities** | seconds |
 | `verify-sandbox.sh` | `--as-agent` | Invoked *through* the `setpriv` wrapper, i.e. with the agent's own privileges | seconds |
@@ -67,7 +68,7 @@ delegable to a cheaper agent: it needs no container, so an agent can iterate aga
 | S21 | No staged credential material is present in the scaffold directory | assert `.secrets/` absent and no file matching `settings.xml`/`npmrc` | FAIL |
 | S22 | Every `container/*` file appears in `README.md`'s Files table | cheap guard against doc drift | WARN |
 | S23 | `container/certs/` is absent or empty | it is generated per machine and must never be committed or shipped | WARN |
-| S24 | The Copilot policy-hook chain is intact: both files shipped, `COPY`d into `/etc/github-copilot/policy.d/`, `chown root:root`, policy file not group/world-writable, registration naming the installed guard path, registered on `preToolUse`, `git-push` rule present, `node --check` clean | this hook — not the `--deny-tool` flags — is what denies `git -C . push`; every link fails silently and open, so each is asserted rather than trusted | FAIL |
+| S24 | Policy-hook packaging and registration fragments remain in source, with optional JavaScript syntax checking | grep COPY/ownership/mode/registration/rule fragments and run `node --check` if available; does not prove effective image permissions, CLI loading, failure behavior or complete command coverage (N2) | FAIL |
 
 ## P — Post-prepare, network open (`verify-sandbox.sh --post-prepare`)
 
@@ -161,6 +162,13 @@ Controlled destinations and command shims let it exercise DNS changes, failures 
 interruptions without attempting external transmission. This supplies focused coverage
 for A8-A10 and X1-X3, not the full P/A/G/X specification or a no-exfiltration guarantee.
 Missing real-backend coverage must be reported explicitly, not counted as a pass.
+
+The default runner includes all 59 E1 scenarios: 54 firewall cases, 4 shim-based
+caller cases and 1 real scoped-sudo case. The recorded completion evidence was
+58 cases in a combined run plus the separately run scoped-sudo case, not a claim
+that the final 59-case runner was executed as one invocation. See
+[the E1 record](SECURITY-REVIEW.md#e1-remediation-on-a-separate-branch) for outcomes
+and outstanding deployment work.
 
 The E1 contract is:
 

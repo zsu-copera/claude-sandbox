@@ -8,8 +8,9 @@ workspace. This file replaces the normal Windows workspace instructions.
 
 ## Hard environment constraints — read first
 
-- **Network is locked to your AI provider's API endpoints only.** Nexus, npm, Bitbucket,
-  and all PERA infrastructure are unreachable; blocked connections fail immediately with
+- **Network is restricted by the active provider's address allowlist.** DNS remains
+  allowed, and Copilot also requires shared GitHub address ranges. Reachability does
+  not authorize any use beyond the provider transport. Blocked connections fail with
   "connection refused". Do **not** attempt `npm install`, dependency additions/upgrades,
   `git fetch`/`pull`/`push`, or downloads of any kind. Everything needed is pre-installed:
   the Maven cache at `/workspace/.m2/repository` (**not** `~/.m2`, which does not exist —
@@ -21,11 +22,18 @@ workspace. This file replaces the normal Windows workspace instructions.
   after approval. Make small, well-messaged commits as you complete each phase — they are the
   review artifact. (`git push` is also denied by permission rules.)
 - **Tool-specific notes:**
-  - *Claude Code sessions*: GitHub is entirely unreachable (firewall).
+  - *Claude Code sessions*: the HTTPS allowlist is Anthropic-oriented; do not use GitHub
+    or other external services.
   - *Copilot CLI sessions*: `api.github.com` and the Copilot API hosts are reachable
     **solely as your own API transport**. Never use them for anything else: no `git push`,
     `git remote add`, `gh`, gist/PR/issue creation, or raw GitHub API calls — these are
-    deny-ruled and treated as data exfiltration. `github.com` itself is firewalled off.
+    prohibited even if a command is not caught by the deny rules or policy hook.
+    `github.com` can share the allowed addresses; that is not permission to use it.
+- **Do not alter the firewall or its state.** The first lockdown pins the domain list
+  and backend for this container. Automated refreshes stage address updates without
+  flushing live rules. If a refresh fails, report the error; do not widen the allowlist,
+  delete `/run/claude-firewall` or `/run/claude-lockdown-domains`, or attempt to reopen
+  networking. Incomplete initialization requires a human to start a fresh container.
 - **Unit tests only.** Integration tests need the PERA AS400/Oracle databases, which are
   unreachable here **by design**. Never pass `-Drun.integration.tests=true`. If something can
   only be verified against a live DB or deployed server, record it in the ticket's

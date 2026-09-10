@@ -2,6 +2,9 @@
 
 > **New here? Start with [QUICKSTART.md](QUICKSTART.md)** — 4 commands + one login.
 > Questions? Check the [FAQ](FAQ.md) first.
+> **E1 firewall update:** implemented on `fix/e1-firewall-transitions`, not yet recorded
+> as deployed. See the [review record](SECURITY-REVIEW.md#e1-remediation-on-a-separate-branch)
+> and [existing-sandbox update procedure](QUICKSTART.md#update-the-firewall-without-resetting-the-workspace).
 
 Runs a coding agent **autonomously** inside an isolated container that holds a disposable
 copy of both repos. Two entrypoints share one image and one prepared workspace:
@@ -10,28 +13,31 @@ CLI, `--allow-all-tools`). Isolation layers:
 
 1. **Container** (rootless podman) — agent sees only the sandbox copy of the workspace,
    never your real working copies or the Windows filesystem.
-2. **Firewall** — at run time, egress is locked to **the active agent's provider
-   endpoints** (Anthropic-only for Claude; Copilot API hosts for Copilot — see the
-   Copilot section for the difference). Nexus, npm, Bitbucket, and the dev databases
-   (AS400 / Oracle) are unreachable; blocked connections are REJECTed so tools fail fast.
+2. **Firewall** — guarded startup restricts outbound HTTPS to the active provider's
+   resolved IPv4 addresses and configured CIDRs. Copilot includes shared GitHub ranges;
+   DNS, loopback and established/related traffic remain allowed. The policy is intended
+   to block dependency registries, Bitbucket and dev databases (AS400 / Oracle), not
+   provide a hostname-level or complete no-exfiltration boundary. Blocked connections
+   are REJECTed so tools fail fast.
    **Lockdown is one-way:** the agent holds passwordless sudo for `init-firewall.sh` alone,
    so the script refuses `open` once its container has locked down, and pins the allowlist
    the first lockdown committed to — a later `lockdown <other-domains>` is ignored.
    Firewall operations are serialized. Refresh stages a replacement allowlist without
    flushing live rules; an interrupted initial installation also prevents reopening.
-3. **Agent-native guardrails** — Claude: settings deny rules **plus a working bubblewrap
-   sandbox** on every Bash command (capabilities are dropped before the agent starts, which
-   is what bwrap needs — see the FAQ); Copilot: deny-tool/deny-url flags + built-in GitHub
-   MCP disabled + a root-owned **policy hook** the agent cannot disable. Both agents run
+3. **Agent-native guardrails** — Claude: settings deny rules and a configured bubblewrap
+   sandbox, with unresolved writable-policy and unsandboxed-fallback findings E2/E3;
+   Copilot: deny-tool/deny-url flags, built-in GitHub MCP disabled, and a root-owned
+   **policy hook** with known matching gaps. Both agents run
    without `CAP_NET_ADMIN`, so neither can touch the firewall
    directly, and sudo is scoped to `init-firewall.sh` rather than `ALL`.
 
-Work never leaves the sandbox on its own: the agent commits **locally only** — the sandbox
-repos have **no remotes** and `git push` is deny-ruled besides; you review from Windows and
-push yourself.
+The required workflow is **local commits only**: the sandbox repos have no remotes,
+common push commands are deny-ruled, and a human reviews and pushes from Windows.
+These controls do not prove that every equivalent command or subprocess upload is
+blocked. E1 fixes firewall transitions, not the remaining E2-E6/N1 isolation findings.
 
-**Isolation model in one sentence:** the bind-mounted `~/pera-sandbox` is the single,
-deliberate output channel — a disposable copy whose contents are inert data until a human
+**Review model in one sentence:** the bind-mounted `~/pera-sandbox` is the intended
+review channel — a disposable copy whose contents are inert data until a human
 reviews and merges them. Treat everything in it as **unreviewed input**: review via
 `git diff`, don't run builds/scripts out of it on the host, and don't open it in an IDE
 that auto-runs tasks. Verification-by-execution belongs inside the container (contained)
@@ -79,7 +85,9 @@ Clones `prj` + `Documentation` from the local Windows working copies (committed 
 current branch — no SSH keys, LF endings), overlays the git-ignored AI assets
 (`prj/.github`, `prj/.agents`), drops in the sandbox `CLAUDE.md` + `.claude/settings.json`,
 stages the corp CAs, and copies `~\.m2\settings.xml` + `~\.npmrc` into `.secrets/`
-(purged before the agent runs). `--force` rebuilds fresh — recommended per task/ticket.
+(purged before the agent runs). `--force` deletes and recreates the workspace, including
+unharvested commits, uncommitted work and caches. Harvest first; do not use it merely to
+update the firewall image.
 
 ### 2. Build the image (when the Dockerfile or image-installed files change)
 
@@ -92,6 +100,18 @@ podman build --secret id=npmrc,src=.secrets/npmrc \
 
 (The secret feeds the global `@angular/cli` install through the Nexus npm proxy without
 persisting credentials in an image layer.)
+
+Assembly, image building, cache preparation and container startup are separate operations.
+`new-sandbox.sh` copies scaffold files into `~/pera-sandbox`; it does not build an image.
+The Dockerfile then bakes those copies into the image. Recreating a container from the
+old image, or rebuilding from an outdated assembled directory, does not deploy a fix.
+Existing running containers are never updated in place.
+
+For E1, use the reviewed branch's Dockerfile and all three changed runtime scripts,
+not just `init-firewall.sh`. Follow the
+[existing-sandbox update procedure](QUICKSTART.md#update-the-firewall-without-resetting-the-workspace)
+to retain a warmed workspace. A firewall-only update does not itself require another
+prepare; changed build inputs or newly requested Maven profiles may.
 
 ### 3. Prepare (network open — one-time per sandbox, ~30–60 min)
 
@@ -161,8 +181,8 @@ conversation (arguments pass through to `claude`). If you stop mid-task, prefer
 Same sandbox, same image, same prepare — different entrypoint and auth volume:
 
 ```bash
-# ONE-TIME per machine: login phase (github.com temporarily allowlisted for the
-# device flow; authenticate with /login, trust /workspace, then exit)
+# ONE-TIME per machine: device-flow login; authenticate with /login, trust
+# /workspace, then exit. Shared GitHub ranges are reachable in normal mode too.
 podman run -it --rm --name pera-copilot --userns=keep-id \
   --cap-add=NET_ADMIN --cap-add=NET_RAW \
   -v ~/pera-sandbox:/workspace -v pera-copilot-config:/home/vscode/.copilot \
@@ -196,24 +216,27 @@ snapshots fail (`api.githubcopilot.com` measured 0/15 reachable without them). B
 GitHub serves `github.com` and the Copilot API **from the same address pool**, IP-level
 filtering cannot separate them — `github.com` (where the real `Documentation` repo
 lives) is *technically connectable in every Copilot session*, and `--login` differs
-only in intent, not network reach. The no-push barrier is therefore layered above the
-network: built-in github-mcp-server disabled, `git push`/`git remote`/`gh` deny-ruled,
-fetch-tool `--deny-url` on GitHub hosts, **no git credentials in the container** (a
-stray `git push` 401s), no `gh` binary, no SSH keys, no git remotes, human review gate.
+only in intent, not network reach. Additional accident-prevention controls include
+disabled built-in github-mcp-server, `git push`/`git remote`/`gh` deny rules,
+fetch-tool `--deny-url` on GitHub hosts, the policy hook, no `gh` binary, no staged
+Git/SSH credentials, no git remotes, and human review. The agent still holds its own
+API authentication; do not assume absent Git configuration makes every external write
+unauthenticated or that URL-tool denials constrain subprocess HTTPS.
 
 Weight those layers correctly. The `--deny-tool` rules match a command-identifier
 **prefix**, so `git push` is denied but `git -C . push` and `env git push` are not
 (verified 2026-09-09, v1.0.83); any global option between `git` and its subcommand
-walks past them. They are kept for the clearer message they give in the common case,
-but the tool-layer control that actually holds is the policy hook at
-`/etc/github-copilot/policy.d/10-guardrails.json` — root-owned, immune to
-`disableAllHooks`, and matching on the whole command string rather than a prefix. The
-credential and remote layers are what make the barrier survive a hook failure.
-This is a meaningfully wider egress surface than Claude's Anthropic-only lockdown — for
-maximum-paranoia overnight runs, prefer `run-agent`. Hostname-level separation would
-require an SNI-aware filtering proxy (squid + owner-match iptables) — a possible future
-hardening step. GitHub-side backstop: keep branch protection / PR-required on
-`coloradopera/Documentation`.
+walks past them. The root-owned hook at
+`/etc/github-copilot/policy.d/10-guardrails.json` catches some additional spellings
+and cannot be disabled through `disableAllHooks`, but equivalent commands and script
+indirection still evade its matching. Hook timeouts can fail open. Removing remotes
+does not prevent an explicit destination either.
+
+Claude's address allowlist is narrower, but its unresolved inner-sandbox findings also
+matter before unattended use. Stronger guarantees require a separately reviewed
+network/credential design; adding command regexes is not sufficient. See
+[E2-E6 and N1/N2](SECURITY-REVIEW.md#security-findings). GitHub branch protection and
+PR requirements remain useful backstops, not protection for every possible write path.
 
 ### 5. Review from Windows
 
@@ -253,15 +276,16 @@ VS Code option: install the Dev Containers extension, set `dev.containers.docker
   reopen a container that has locked down (see next item) — prepare is a separate
   container, so that path still works.
 - **Lockdown is one-way, by design.** `init-firewall.sh open` exits 3 once the
-  `CLAUDE_LOCKDOWN` marker chain exists, and the first successful lockdown pins its domain
-  list in `/run/claude-lockdown-domains` (root-owned, unreadable to the agent); later
-  lockdowns reuse it and ignore their arguments. The 15-min refresh loop and Copilot's
+  root-owned state or `CLAUDE_LOCKDOWN`/`CLAUDE_HTTPS` chains indicate initialization.
+  Incomplete initialization also prevents reopening. The first installed lockdown pins
+  its domain list in `/run/claude-lockdown-domains` (root-owned, unreadable to the agent);
+  later lockdowns reuse it and ignore their arguments. The 15-min refresh loop and Copilot's
   `--login` mode are unaffected — each container's domain set is fixed before its first
   lockdown. To get an open network again, start a fresh container.
 - **`/tmp` is writable inside the native sandbox** (`sandbox.filesystem.allowWrite`).
   Required, not incidental: Java ignores `$TMPDIR`, so `java.io.tmpdir` stays `/tmp` and
-  the WAR assembly fails on a read-only `/tmp`. Everything else keeps full filesystem
-  isolation. See the FAQ entry for the measurements.
+  the WAR assembly fails on a read-only `/tmp`. This necessary allowance does not
+  resolve the writable-policy or unsandboxed-fallback findings E2/E3.
 - **Sudo is scoped to `init-firewall.sh`.** Not `NOPASSWD:ALL` — that would have made the
   agent effectively root, able to flush the firewall or read past the settings deny rules.
   Any new call site must use the absolute path, since `Defaults secure_path` excludes
@@ -274,9 +298,10 @@ VS Code option: install the Dev Containers extension, set `dev.containers.docker
   without it is unwritable — `podman volume rm pera-claude-config` and re-login), and
   `CLAUDE_CONFIG_DIR=/home/vscode/.claude` must be set (baked into the image) so
   `.claude.json` lands in the volume instead of the ephemeral container home.
-- **Rebuilding the image after an agent run:** `run-agent` purges `.secrets/`, so re-stage
-  the npm secret first (`cp /mnt/c/Users/<you>/.npmrc ~/pera-sandbox/.secrets/npmrc`) or
-  re-run `new-sandbox.sh`.
+- **Rebuilding the image after an agent run:** both launchers purge `.secrets/`.
+  Recreate that directory with mode 700 and copy the host npm credential file to
+  `.secrets/npmrc` with mode 600 before building. Do not reset the workspace simply
+  to re-stage a secret; the update procedure above preserves existing work.
 - **Recommended IT follow-up:** a Nexus `raw` proxy of `nodejs.org/dist` would remove the
   node-tarball assembly workaround for everyone (Windows devs included).
 
@@ -294,9 +319,11 @@ VS Code option: install the Dev Containers extension, set `dev.containers.docker
 | `container/run-copilot.sh` → `run-copilot` | Lockdown (Copilot hosts; `--login` adds github.com once) → purge creds → start Copilot CLI |
 | `container/copilot-settings.json` | Seeded model default (claude-opus-4-8) for `~/.copilot` |
 | `container/copilot-policy.json` → `/etc/github-copilot/policy.d/10-guardrails.json` | Machine-policy `preToolUse` hook registration (root-owned; survives `disableAllHooks`) |
-| `container/guard-shell-command.js` | The guardrail itself: denies obfuscated commands and `git push`/remote mutation in any spelling |
+| `container/guard-shell-command.js` | Selected command-pattern vetoes; known matching gaps, not a complete no-push boundary |
 | `container/certs/` | (generated) corp root CAs staged by new-sandbox.sh |
 | `overlay/CLAUDE.md` | Sandbox-adapted instructions the agent boots with |
 | `overlay/.claude/settings.json` | bypassPermissions + deny rules + native sandbox |
 | `verify-scaffold.sh` | Host-side static assertions |
 | `verify-firewall.sh`, `tests/firewall/` | E1 regressions in disposable containers, without workspace or credential mounts |
+| `SECURITY-REVIEW.md` | Original audit reconciliation, E1 commit/evidence record and deployment status |
+| `VERIFY-ASSERTIONS.md` | Implemented checks, planned lifecycle assertions and coverage limits |

@@ -2,10 +2,11 @@
 
 Spin up an isolated environment where a coding agent — **Claude Code** or **GitHub
 Copilot CLI** (your choice at step 4; both drive Claude Opus 4.8) — works **autonomously**
-on a disposable copy of the PERA codebase. The agent cannot touch your real working
-copies, cannot push, cannot reach internal databases, and its network is locked to its
-own AI provider's endpoints. You review its local git commits afterward and push only
-what you approve.
+on a disposable copy of the PERA codebase rather than your real working copies.
+Guarded startup installs an address-based firewall and removes build credentials.
+The required workflow is local commits followed by human review and push; it is not
+a guarantee that every external write is technically impossible, particularly in
+Copilot sessions using shared GitHub IP ranges.
 
 > Full design, caveats, and file-by-file details: [README.md](README.md) · common
 > questions and troubleshooting: [FAQ.md](FAQ.md)
@@ -32,6 +33,8 @@ wsl -d centos-9 -- bash /mnt/c/work/pera/claude-sandbox/new-sandbox.sh --force
 Clones both repos into `~/pera-sandbox` (inside WSL), overlays the git-ignored AI assets
 (`prj/.github`, `prj/.agents`), and stages the corp CAs + your Nexus credentials
 (credentials are deleted again before the agent ever starts).
+**`--force` deletes the old workspace, including unharvested work and caches.** Harvest
+first. To install E1 into an existing sandbox, use the update section below instead.
 
 ### 2. Build the image — inside WSL (`wsl -d centos-9`)
 
@@ -40,7 +43,10 @@ cd ~/pera-sandbox
 podman build --secret id=npmrc,src=.secrets/npmrc -t pera-sandbox -f .devcontainer/Dockerfile .
 ```
 
-~5–10 min. Only needed once per machine, or when the Dockerfile changes. Agent CLIs
+Build time depends on which layers are invalidated. Rebuild when the Dockerfile or
+any image-installed file changes, including the firewall, launchers or policy hook.
+The build uses the copies in `~/pera-sandbox`, not the working scaffold directly.
+Agent CLIs
 (Claude Code, Copilot) are refreshed to latest during `prepare-sandbox`, so new CLI
 versions and newly released models do **not** require an image rebuild.
 
@@ -127,10 +133,57 @@ podman run -it --rm --userns=keep-id --cap-add=NET_ADMIN --cap-add=NET_RAW \
 Model is pre-set to claude-opus-4-8 (check `/model`). Headless variant:
 `... run-copilot --autopilot -p "Convert EPD-xxx per the migration guide"`.
 
-Copilot sessions allow GitHub's IP ranges (its API shares them — unavoidable), a wider
-surface than Claude's Anthropic-only lockdown; pushes to GitHub are blocked by deny
-rules and absent credentials, not the network. See README §4b for the full picture and
-when to prefer `run-agent` (short version: maximum-paranoia overnight runs).
+Copilot sessions allow GitHub's shared IP ranges, a wider surface than Claude's
+Anthropic allowlist. Deny rules and the policy hook reduce accidental writes but have
+known gaps; the firewall does not distinguish GitHub hosting from Copilot transport.
+Read [README §4b](README.md#4b-github-copilot-cli-variant) before unattended use.
+
+## Update the firewall without resetting the workspace
+
+For the E1 update, the sequence is **reviewed scaffold -> refreshed build context ->
+rebuilt image -> new container**. A fresh container from the old image still has the
+old firewall. Implementation is on `fix/e1-firewall-transitions`; deployment is a
+separate step tracked in [SECURITY-REVIEW.md](SECURITY-REVIEW.md#e1-remediation-on-a-separate-branch).
+
+1. Exit the current agent normally. Confirm that the working scaffold has the reviewed
+   E1 branch checked out. Review the assembled build context before building from it;
+   agent-written files are not automatically trusted. Do not run `new-sandbox.sh --force`
+   for this update.
+2. Refresh the E1 build inputs from the trusted scaffold, inside WSL:
+
+```bash
+(
+    set -e
+    SCAFFOLD=/mnt/c/work/pera/claude-sandbox
+    for path in "$HOME/pera-sandbox" "$HOME/pera-sandbox/.devcontainer" "$HOME/pera-sandbox/container"; do
+        if [ ! -d "$path" ] || [ -L "$path" ]; then
+            echo "Expected a real directory, not a symlink: $path" >&2
+            exit 1
+        fi
+    done
+    cd ~/pera-sandbox
+    cp --remove-destination "$SCAFFOLD/.devcontainer/Dockerfile" .devcontainer/Dockerfile
+    cp --remove-destination "$SCAFFOLD/container/init-firewall.sh" \
+       "$SCAFFOLD/container/run-agent.sh" \
+       "$SCAFFOLD/container/run-copilot.sh" container/
+    cp --remove-destination "$SCAFFOLD/overlay/CLAUDE.md" CLAUDE.md
+    cp --remove-destination "$SCAFFOLD/overlay/CLAUDE.md" AGENTS.md
+)
+```
+
+3. If `.secrets/npmrc` was purged, recreate `.secrets` with mode 700 and copy your
+   host npm credential file into it with mode 600. Do not print or commit its contents.
+4. Re-run the `podman build` command in **Spin-up, step 2**. Use the refreshed build context; the
+   Dockerfile installs the firewall and both launchers into the rebuilt image.
+5. Start a new container with the command in **Spin-up, step 4 or 4-alt**. Existing containers
+   are not updated in place. Do not manually transplant the script into a locked-down
+   container or remove its `/run` state.
+
+The workspace's repos, commits, warmed caches and auth volumes are preserved.
+A firewall-only update does not require another prepare if the needed build inputs
+and profiles remain warmed. Missing dependencies still require a separate prepare
+container. Source-mounted regression results do not prove the rebuilt image was
+deployed; record its image ID and startup outcome in the review record.
 
 ## Review & harvest — from Windows
 
@@ -169,8 +222,10 @@ If the task touched docs, repeat against `...\pera-sandbox\Documentation` into
 wsl -d centos-9 -- bash /mnt/c/work/pera/claude-sandbox/new-sandbox.sh --force
 ```
 
-Then re-run step 3 (prepare). The image (step 2) and both agent logins (Claude + Copilot
-volumes) survive. Any un-harvested agent commits are lost — review first.
+Then re-run step 3 (prepare). The image and both agent logins (Claude + Copilot volumes)
+survive. If the reset copied updated image-installed scaffold files, rebuild at step 2
+before preparing or running. Any unharvested commits or uncommitted work are lost on
+reset — review first.
 
 ## Things to know
 
@@ -182,19 +237,27 @@ volumes) survive. Any un-harvested agent commits are lost — review first.
   `git diff`, don't run builds or scripts out of `~/pera-sandbox` on the host, don't open
   it in an IDE that auto-runs tasks. The sandbox repos have no git remotes — that's
   intentional.
-- **`run-agent` / `run-copilot` refuse to start** unless the firewall self-test passes:
-  the agent's own provider endpoints reachable AND everything else refused. If it aborts,
-  the lockdown failed — investigate before running the agent.
+- **Guarded startup is mandatory.** Use `run-agent` or `run-copilot`, not a bare CLI
+  from an uninitialized shell. All configured domain names must resolve, the first
+  non-CIDR endpoint must answer the positive probe, and `example.com` must fail the
+  negative probe. CIDR-only lists skip the positive probe. This is not an exhaustive
+  test of every permitted or forbidden destination.
 - **Unit tests only.** The dev AS400/Oracle databases are unreachable *by design*.
   DB-dependent verification happens after review, on-network.
-- **The agent cannot push.** Commits stay local until a human fetches and pushes them.
+- **Never push from the sandbox.** Review and publish from the host; do not treat
+  command-pattern restrictions as complete containment.
 - **"Connection refused" inside a session is the firewall working**, not a bug. If the
   agent genuinely needs a new dependency, re-run step 3 (network open) to fetch it.
 - **Lockdown is one-way.** Once a container has locked down it cannot be reopened: the
   agent has passwordless sudo for `init-firewall.sh` only, and the script refuses `open`
-  and pins the allowlist its first lockdown committed to. Step 3 (prepare) is a separate
-  container, so the fetch-a-dependency path above still works. Need an open network in the
-  same container? Start a fresh one.
+  and pins the initial allowlist and backend. Interrupted initialization also blocks
+  reopening and another lockdown; start a fresh container using the same workspace,
+  rather than deleting state or resetting the workspace. Step 3 (prepare) is a separate
+  container, so the fetch-a-dependency path above still works.
+- **Refresh errors are visible.** Every 15 minutes, addresses are staged and activated
+  without flushing live rules. Failure before activation keeps the old restrictions;
+  cleanup/probe failure after activation keeps the new ones. The agent may continue,
+  but provider connectivity can degrade. See the [FAQ](FAQ.md#troubleshooting).
 - The sandbox instructions (`CLAUDE.md` for Claude, `AGENTS.md` for Copilot — same
   content) are auto-loaded by the agent and already explain all of this — you don't need
   to repeat it in your prompts.

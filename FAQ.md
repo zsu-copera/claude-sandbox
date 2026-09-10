@@ -37,9 +37,12 @@ agent. Conversion work always needs warming — the pipeline mandates unit tests
 **Can I use VS Code instead of the terminal?**
 The workflow is terminal-first, but the Dev Containers extension works: set
 `dev.containers.dockerPath` to `podman` and open `\\wsl$\centos-9\home\<you>\pera-sandbox`.
-Note the container started by VS Code does NOT lock the firewall for you — run
-`sudo init-firewall.sh lockdown` (plus the Copilot domain set if applicable) before
-letting an agent loose from a VS Code terminal.
+The container started by VS Code does NOT automatically perform guarded startup.
+Launch `run-agent` or `run-copilot` in its terminal, using the appropriate auth volume,
+before giving an agent work. These wrappers select the domain list, enforce startup
+probes, purge build credentials and drop capabilities. Manually calling the firewall
+alone does not perform the rest of that sequence. To switch providers, use a fresh
+container: the first domain list is pinned.
 
 ## Running & sessions
 
@@ -54,6 +57,14 @@ Harvest anything you want to keep first, then `new-sandbox.sh --force` + re-run 
 The image and both agent logins survive; the workspace (including un-harvested commits
 and the `.m2` cache) does not. This also picks up whatever branch your Windows working
 copies currently have checked out.
+
+**Does a fresh container automatically get the updated firewall?**
+Only if it uses an image rebuilt from the updated scaffold files. Assembly copies the
+build inputs into `~/pera-sandbox`; building bakes those copies into the image;
+starting a container uses that image. Reusing an old image or stale build context keeps
+the old firewall. Running containers are not updated in place. Follow the
+[E1 update procedure](QUICKSTART.md#update-the-firewall-without-resetting-the-workspace);
+it preserves the workspace and does not require a reset or a new prepare solely for E1.
 
 **Can I switch between Claude and Copilot on the same sandbox?**
 Yes, freely — same workspace, same files, same instructions; swap only the entrypoint
@@ -98,9 +109,11 @@ explicitly. See the coverage table in QUICKSTART step 3.
 That folder IS the deliberate, single output channel — a disposable copy containing
 nothing you can lose. Isolation means a precisely scoped write surface, not a hermetic
 seal: the agent can't see your real working copies, `C:\`, other WSL paths, or the
-network beyond its provider's endpoints. What lands in the sandbox is inert data until a
-human reviews and merges it. Corollary: treat sandbox contents as unreviewed input —
-review via `git diff`, don't run builds from it on the host.
+network without the configured firewall restrictions. Those restrictions include DNS
+and, for Copilot, shared GitHub address ranges; the workspace is the intended review
+channel, not a proven exclusive data channel. Treat sandbox contents as unreviewed
+input until a human reviews and merges them: inspect with `git diff`, don't run builds
+from it on the host.
 
 **Can the agent see git history / read old commits?**
 Yes — the full history of the working branch, deliberately: `git blame`, prior-conversion
@@ -111,12 +124,12 @@ them — they're equally present in every dev machine's clone, not a sandbox-spe
 exposure.
 
 **Can the agent push code anywhere?**
-Not by design, with layered barriers: the sandbox repos have no git remotes, `git push`
-is deny-ruled for both agents, Bitbucket is firewalled off in all sessions, and the
-container holds no git credentials or SSH keys. Copilot sessions can technically reach
-GitHub's IP space (its API shares those IPs — unavoidable), which is why Copilot
-additionally gets `git push`/`git remote`/`gh` deny rules and a disabled
-github-mcp-server. Full analysis: README §4b.
+The agent is instructed to commit locally only, and several controls block common
+push paths. That is not a universal technical prohibition: explicit destinations,
+script indirection and subprocess HTTPS are not fully covered by command-pattern
+rules. Copilot can reach shared GitHub ranges and has its own API authentication.
+E1 fixes refresh/reopen transitions, not these remaining gaps. See
+[README §4b](README.md#4b-github-copilot-cli-variant) and the security review.
 
 **Why can't the agent run integration tests?**
 They hardcode live dev infrastructure (AS400, Oracle) that the firewall blocks — by
@@ -133,8 +146,9 @@ when a non-setuid binary holds capabilities, and the `--cap-add=NET_ADMIN/NET_RA
 firewall needs landed in the *ambient* set, so bwrap and the firewall were mutually
 exclusive. `run-agent`/`run-copilot` now drop capabilities (`setpriv --inh-caps=-all
 --ambient-caps=-all`) after lockdown and before starting the agent, which fixes bwrap and
-takes `CAP_NET_ADMIN` away from the agent at the same time. Verified: bwrap runs, and Bash
-tool calls work.
+takes `CAP_NET_ADMIN` away from the agent at the same time. That historical check
+established compatibility, not mandatory sandbox enforcement: writable settings and
+unsandboxed fallback remain findings E2/E3 in the security review. E1 does not fix them.
 
 **A build fails under the native sandbox with "Read-only file system". Why?**
 Java ignores `$TMPDIR`. The sandbox makes only the working directory and a session temp
@@ -196,15 +210,38 @@ volume at the same protection level as every other credential on your machine
 if a machine is ever compromised.
 
 **`run-agent`/`run-copilot` aborts with a firewall error before the agent starts.**
-Working as intended: the lockdown self-test failed (provider endpoint unreachable, or —
-worse — the negative probe found open egress). Don't bypass it; investigate. First
-checks: is WSL networking up (`curl` from centos-9 directly), did Zscaler change
-behavior, does `podman run` have `--cap-add=NET_ADMIN --cap-add=NET_RAW`?
+Do not bypass the wrapper. DNS resolution, rule staging/installation, state consistency,
+lock acquisition or a smoke probe can fail; read the error before assuming the cause.
+Check WSL networking, Zscaler behavior and the container's NET_ADMIN/NET_RAW flags.
+A DNS/staging failure before initial installation can be retried once corrected.
+Incomplete installation or inconsistent state requires a fresh container.
+
+**The error says "incomplete lockdown state" or "use a fresh container".**
+Exit and recreate the agent container from the intended image, retaining the same
+workspace and auth volume. Do not delete `/run/claude-firewall`,
+`/run/claude-lockdown-domains` or kernel chains to force a retry. This state makes
+interrupted initialization non-reopenable. A new container is not a workspace reset;
+`new-sandbox.sh --force` is unnecessary and would destroy work and caches.
+
+**"Allowlist refresh failed" appears during a session. Is the network open?**
+The refresh does not flush live rules or deliberately reopen networking on failure.
+Before activation, errors leave the old snapshot active; after activation,
+cleanup/probe errors leave the new snapshot active. The warning is visible while
+the agent continues, and provider connectivity may degrade. Read the preceding
+firewall error; do not widen the allowlist or disable the firewall to recover.
+Interrupted initialization or inconsistent state calls for a fresh container.
+
+**The script selected per-IP rules instead of ipset. Is that a failure?**
+No. Initial lockdown selects the per-IP backend if ipset is unavailable. That backend
+is fixed for the container. Both backends stage replacements without flushing the
+live firewall; an ipset error during refresh does not trigger a backend migration.
 
 **Maven build fails wanting `.secrets/settings.xml` during prepare.**
 `run-agent`/`run-copilot` purge `.secrets/` at every start (by design). Re-stage before
 re-running prepare or rebuilding the image: copy your `~\.m2\settings.xml` and `~\.npmrc`
-back into `~/pera-sandbox/.secrets/` (or just re-run `new-sandbox.sh`).
+back into `~/pera-sandbox/.secrets/`, protecting the directory with mode 700 and files
+with mode 600. Only the npm file is needed for the image build; prepare also needs
+Maven settings. Do not reset the workspace just to re-stage credentials.
 
 **`ng build` segfaults / Angular builds die silently.**
 You're probably not in the sandbox container (its image ships the official node binary

@@ -3,6 +3,11 @@
 Reviewed 2026-09-09. This is a point-in-time verification of the existing audit,
 not an implementation of its recommendations or approval for unattended use.
 
+**Bookkeeping update, 2026-09-10:** the original findings and counts below retain
+their review-time meaning. E1 has since been implemented and committed on a separate
+branch; packaging and deployment remain outstanding. See the
+[E1 remediation record](#e1-remediation-on-a-separate-branch) for the current status.
+
 ## Scope and baseline
 
 Original report: [PERA Agent Sandbox Audit](https://claude.ai/code/artifact/3e434978-46fb-42c0-8292-028e9efc982b),
@@ -183,7 +188,10 @@ assembled application configurations contain the mixed target set. No applicatio
 test suites were run. The local overlay's "zero Vitest targets" statement is now
 stale too; fixing only QUICKSTART would leave contradictory guidance.
 
-## Recommended sequence
+## Original recommended sequence
+
+This is the review-time ordering. E1's implementation and subsequent work are tracked
+in the addendum below; the original list does not mean the branch fix is still unwritten.
 
 1. **E1 with focused V1 regressions:** guard durable lockdown state, serialize
    transitions, and avoid a temporary ACCEPT interval. Cover both ipset and
@@ -244,6 +252,16 @@ they do not replace exercising the exact CLI builds deployed in a future image.
 Implementation branch: `fix/e1-firewall-transitions`. The original review above
 remains a record of the reviewed image and source, not a claim about this branch.
 
+| Item | Recorded status as of 2026-09-10 |
+|---|---|
+| Firewall implementation | Committed as `d714fb5` |
+| Regression harness and initial documentation | Committed as `1ccbb5e` |
+| Branch evidence | Both real firewall backends, launcher failure paths and scoped-sudo refusal exercised; details below |
+| `main` | Remains at `91e7b1f`; E1 has not been merged |
+| Tagged `localhost/pera-sandbox` image | Still `9538a73e9e894e2a9d325fc09db8bfa609737b4222cf598a362857391d75588e`, the pre-E1 image |
+| Refreshed build context, rebuilt image and new agent session | Deployment not yet recorded; follow the QUICKSTART update procedure |
+| Documentation distribution copy | Not promoted as part of E1 |
+
 The candidate serializes firewall operations with a root-owned lock, guards
 reopening with durable and kernel state, and keeps the static firewall in place
 during refresh. Address updates use a staged ipset swap or one jump replacement
@@ -290,8 +308,18 @@ The recorded runs are 58 passing firewall/caller scenarios together, followed
 by 1 passing targeted real-sudo scenario, with no failures or skips. They do not
 cover a rebuilt image, real provider sessions or the lock's full timeout duration.
 
-**Deployment remains separate:** the existing `localhost/pera-sandbox` image and
-assembled workspace have not been updated, and `main` and the Documentation
-distribution copy have not been changed. E1 must not be marked resolved for that
-deployed image merely because the branch has a candidate fix. DNS policy, shared
-GitHub ranges, command-hook gaps and unguarded startup are outside this change.
+**Deployment remains separate:** E1 development did not update the assembled
+workspace, replace the tagged image, merge `main` or promote the distribution copy.
+The image ID above was read again during the documentation update and remains unchanged.
+E1 must not be marked resolved for that image merely because the branch has a fix.
+
+Next, complete and record the [existing-sandbox update procedure](QUICKSTART.md#update-the-firewall-without-resetting-the-workspace):
+the selected scaffold revision, refreshed build inputs, new image ID and a guarded
+startup outcome. Recreating a container from the old image is not deployment. Keep
+the original image evidence above rather than rewriting it as evidence for a rebuild.
+
+The documentation update also corrects overstatements about universal no-push
+enforcement, exclusive provider access and S24's coverage. This does not remediate
+N1/E6, complete V1/N2 or change E2/E3/E5 policy. The next design decision remains
+the containment requirement (N1/E6/C5), followed by the coordinated Claude-policy
+and guarded-startup work.
