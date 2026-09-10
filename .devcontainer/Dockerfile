@@ -25,7 +25,7 @@ RUN dnf -y install epel-release \
         bubblewrap socat \
         git openssh-clients \
         jq less procps-ng \
-        sudo tar gzip unzip which \
+        sudo util-linux util-linux-core tar gzip unzip which \
     && dnf clean all
 
 # Maven 3.9 via the internal Nexus (Zscaler resets direct tarball downloads mid-stream;

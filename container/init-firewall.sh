@@ -10,19 +10,32 @@
 #                                           # run-copilot passes GitHub endpoints.
 #                                           # Smoke test probes the FIRST listed domain.
 #
-# Lockdown is idempotent and refresh-safe: allowed IPs are resolved into a fresh
-# ipset and atomically swapped, so re-running it mid-session (Anthropic IPs rotate)
-# never opens a gap. Blocked connections are REJECTed, not dropped, so tools the
-# agent runs fail fast instead of hanging on timeouts.
-set -euo pipefail
+# Refresh leaves the live firewall in place: swap a staged ipset, or replace one
+# jump to a staged per-IP chain. All transitions share a root-owned lock.
+set -Eeuo pipefail
+
+die() {
+    echo "[firewall] ERROR: $*" >&2
+    exit 1
+}
+
+trap 'status=$?; echo "[firewall] ERROR: operation failed (status $status); no open-network recovery attempted." >&2; exit "$status"' ERR
+trap 'echo "[firewall] ERROR: interrupted; restrictions and initialization state retained." >&2; exit 130' INT
+trap 'echo "[firewall] ERROR: terminated; restrictions and initialization state retained." >&2; exit 143' TERM
 
 if [ "$(id -u)" -ne 0 ]; then
-    echo "init-firewall.sh must run as root (use sudo)" >&2
-    exit 1
+    die "init-firewall.sh must run as root (use sudo)"
 fi
 
 MODE="${1:-}"
-shift || true
+case "$MODE" in
+    open|lockdown) shift ;;
+    *) echo "Usage: init-firewall.sh open | lockdown [domain ...]" >&2; exit 2 ;;
+esac
+if [ "$MODE" = open ] && [ "$#" -ne 0 ]; then
+    echo "Usage: init-firewall.sh open | lockdown [domain ...]" >&2
+    exit 2
+fi
 
 # Anthropic-only default: API + auth endpoints. Telemetry hosts are intentionally
 # absent (CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 is set container-wide).
@@ -34,164 +47,228 @@ DEFAULT_DOMAINS=(
 )
 
 IPSET=claude-allowed
-MARKER=CLAUDE_LOCKDOWN   # empty chain used as an "is locked down" marker
+MARKER=CLAUDE_LOCKDOWN
+DISPATCH=CLAUDE_HTTPS
+CHAIN_A=CLAUDE_ALLOW_A
+CHAIN_B=CLAUDE_ALLOW_B
+COMMITTED=/run/claude-lockdown-domains
+STATE=/run/claude-firewall
+PENDING="$STATE/installing"
+BACKEND_FILE="$STATE/backend"
+LAYOUT_FILE="$STATE/layout"
 
-flush_rules() {
+# /run is root-owned and is not a workspace/auth mount. Never unlink the lock:
+# replacing its inode would allow two invocations to hold different locks.
+umask 077
+mkdir -p -m 700 "$STATE"
+exec 9>>"$STATE/lock"
+flock -w 30 9
+RULES=$(iptables -S)
+
+has_state() {
+    [ -e "$COMMITTED" ] || [ -e "$PENDING" ] \
+        || [ -e "$BACKEND_FILE" ] || [ -e "$LAYOUT_FILE" ] \
+        || grep -Eq "^-N ($MARKER|$DISPATCH)$" <<< "$RULES"
+}
+
+if [ "$MODE" = open ]; then
+    # The agent can sudo this script with arbitrary arguments. Durable state AND
+    # the kernel marker guard this one-way door, including interrupted installs.
+    if has_state; then
+        echo "[firewall] REFUSING to open: this container is already locked down." >&2
+        echo "[firewall] Lockdown is one-way, including incomplete initialization. Use a fresh container." >&2
+        exit 3
+    fi
     iptables -P INPUT ACCEPT
     iptables -P OUTPUT ACCEPT
     iptables -P FORWARD ACCEPT
     iptables -F
-    iptables -X 2>/dev/null || true
+    iptables -X
+    echo "[firewall] OPEN — all egress allowed. Prepare phase only; run 'init-firewall.sh lockdown' before starting the agent."
+    exit 0
+fi
+
+valid_ipv4() {
+    local value="$1" octet
+    local -a octets
+    [[ "$value" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?$ ]] || return 1
+    IFS=. read -r -a octets <<< "${value%%/*}"
+    for octet in "${octets[@]}"; do
+        ((10#$octet <= 255)) || return 1
+    done
+    if [[ "$value" == */* ]]; then
+        ((10#${value##*/} <= 32)) || return 1
+    fi
+    return 0
 }
 
-case "$MODE" in
-open)
-    # One-way door: once this container has been locked down, it cannot be reopened.
-    # The agent runs with passwordless sudo for THIS script, so without this guard an
-    # autonomous session could simply re-open its own egress. The marker chain is
-    # per-container (iptables state dies with the container), so the prepare phase —
-    # a separate container that never locks down — is unaffected. To get an open
-    # network again, start a fresh container.
-    if iptables -n -L "$MARKER" >/dev/null 2>&1; then
-        echo "[firewall] REFUSING to open: this container is already locked down." >&2
-        echo "[firewall] Lockdown is one-way by design. Use a fresh container instead." >&2
-        exit 3
+# Exclude the two changing allow chains. The ipset dispatch rule is static;
+# per-IP dispatch is validated separately and its active target read from the kernel.
+snapshot_layout() {
+    iptables -S | grep -E '^(-P (INPUT|OUTPUT|FORWARD) |-(A|N) (INPUT|OUTPUT|FORWARD|CLAUDE_LOCKDOWN)( |$))'
+    if [ "$BACKEND" = ipset ]; then
+        iptables -S "$DISPATCH"
     fi
-    flush_rules
-    ipset destroy "$IPSET" 2>/dev/null || true
-    echo "[firewall] OPEN — all egress allowed. Prepare phase only; run 'init-firewall.sh lockdown' before starting the agent."
-    ;;
+}
 
-lockdown)
-    DOMAINS=("$@")
-    if [ ${#DOMAINS[@]} -eq 0 ]; then
-        DOMAINS=("${DEFAULT_DOMAINS[@]}")
-    fi
-
-    # Sticky allowlist. The FIRST successful lockdown in this container commits its
-    # domain list; every later lockdown reuses it and ignores whatever was passed.
-    #
-    # Why: the agent has passwordless sudo for THIS script, and sudoers cannot constrain
-    # arguments here (callers legitimately pass their own domain sets). Without this an
-    # autonomous session could re-lock the firewall around an allowlist of its own
-    # choosing — an egress channel — which would make the one-way `open` guard pointless.
-    # Blocking `open` while leaving `lockdown <anything>` open was only half a door.
-    #
-    # Safe for the two flows that re-lock: run-agent's 15-min refresh and run-copilot's
-    # --login mode both keep a FIXED domain set for the life of the container, decided
-    # before the first call. $COMMITTED lives on /run — tmpfs, per-container, root-owned
-    # 755, so the agent (uid 1000) can neither forge nor delete it (verified).
-    COMMITTED=/run/claude-lockdown-domains
-    if [ -s "$COMMITTED" ]; then
-        mapfile -t COMMITTED_DOMAINS < "$COMMITTED"
-        if [ "${DOMAINS[*]}" != "${COMMITTED_DOMAINS[*]}" ]; then
-            echo "[firewall] NOTE: ignoring the supplied allowlist — this container is committed to: ${COMMITTED_DOMAINS[*]}" >&2
+DOMAINS=("$@")
+[ ${#DOMAINS[@]} -ne 0 ] || DOMAINS=("${DEFAULT_DOMAINS[@]}")
+INITIAL=1
+if has_state; then
+    [ -s "$COMMITTED" ] && [ -s "$BACKEND_FILE" ] && [ -s "$LAYOUT_FILE" ] \
+        && [ ! -e "$PENDING" ] \
+        || die "incomplete lockdown state; use a fresh container"
+    BACKEND=$(< "$BACKEND_FILE")
+    case "$BACKEND" in ipset|per-ip) ;; *) die "invalid saved backend; use a fresh container" ;; esac
+    grep -q "^-N $MARKER$" <<< "$RULES" || die "lockdown marker missing; use a fresh container"
+    current_layout=$(snapshot_layout)
+    [ "$current_layout" = "$(< "$LAYOUT_FILE")" ] \
+        || die "live firewall differs from the committed layout; use a fresh container"
+    if [ "$BACKEND" = per-ip ]; then
+        dispatch_rules=$(iptables -S "$DISPATCH")
+        if [ "$dispatch_rules" = "$(printf -- '-N %s\n-A %s -j %s' "$DISPATCH" "$DISPATCH" "$CHAIN_A")" ]; then
+            ACTIVE="$CHAIN_A"
+            NEXT="$CHAIN_B"
+        elif [ "$dispatch_rules" = "$(printf -- '-N %s\n-A %s -j %s' "$DISPATCH" "$DISPATCH" "$CHAIN_B")" ]; then
+            ACTIVE="$CHAIN_B"
+            NEXT="$CHAIN_A"
+        else
+            die "invalid live allowlist dispatch; use a fresh container"
         fi
-        DOMAINS=("${COMMITTED_DOMAINS[@]}")
     fi
+    # Never let sudo lockdown <other-domains> replace the first pinned domain list.
+    mapfile -t COMMITTED_DOMAINS < "$COMMITTED"
+    if [ "${DOMAINS[*]}" != "${COMMITTED_DOMAINS[*]}" ]; then
+        echo "[firewall] NOTE: ignoring supplied allowlist; using this container's committed domains." >&2
+    fi
+    DOMAINS=("${COMMITTED_DOMAINS[@]}")
+    INITIAL=0
+fi
 
-    # ipset isn't always usable in rootless user namespaces (e.g. rootless podman);
-    # fall back to one iptables ACCEPT rule per resolved IP in that case.
-    USE_IPSET=1
-    if ipset create claude-probe hash:ip 2>/dev/null; then
+# Resolve before touching live rules. A partial DNS result must not replace a
+# working snapshot. CIDRs are needed for Copilot's shared GitHub address ranges.
+ALLOWED_IPS=()
+SMOKE_HOST=""
+for d in "${DOMAINS[@]}"; do
+    if [[ "$d" == */* ]]; then
+        valid_ipv4 "$d" || die "invalid IPv4 CIDR: $d"
+        ALLOWED_IPS+=("$d")
+        continue
+    fi
+    [[ "$d" =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?\.?$ ]] || die "invalid domain: $d"
+    [ -n "$SMOKE_HOST" ] || SMOKE_HOST="$d"
+    answer=$(dig +time=2 +tries=1 +short A "$d")
+    found=0
+    while IFS= read -r ip; do
+        if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            valid_ipv4 "$ip" || die "invalid DNS address for $d"
+            ALLOWED_IPS+=("$ip")
+            found=1
+        fi
+    done <<< "$answer"
+    [ "$found" -eq 1 ] || die "could not resolve $d; existing firewall unchanged"
+done
+[ ${#ALLOWED_IPS[@]} -gt 0 ] || die "resolved no allowlist IPs; existing firewall unchanged"
+sorted_ips=$(printf '%s\n' "${ALLOWED_IPS[@]}" | sort -u)
+mapfile -t ALLOWED_IPS <<< "$sorted_ips"
+
+if [ "$INITIAL" -eq 1 ]; then
+    # Choose once. A later ipset failure must not trigger a live backend migration.
+    if ipset create claude-probe hash:net -exist 2>/dev/null; then
         ipset destroy claude-probe
+        BACKEND=ipset
     else
-        USE_IPSET=0
+        BACKEND=per-ip
         echo "[firewall] NOTE: ipset unavailable — using per-IP iptables rules instead."
     fi
-
-    # Resolve the allowlist. Entries containing "/" are CIDR ranges and pass through
-    # unresolved — needed for GitHub, whose GLB rotates IPs between resolutions faster
-    # than any snapshot can track (per-IP allowlisting of github hosts WILL fail).
-    ALLOWED_IPS=()
-    SMOKE_HOST=""
-    for d in "${DOMAINS[@]}"; do
-        if [[ "$d" == */* ]]; then
-            ALLOWED_IPS+=("$d")
-            continue
-        fi
-        [ -n "$SMOKE_HOST" ] || SMOKE_HOST="$d"
-        ips=$(dig +short A "$d" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$' || true)
-        if [ -z "$ips" ]; then
-            echo "[firewall] WARN: could not resolve $d (skipped)" >&2
-            continue
-        fi
-        for ip in $ips; do ALLOWED_IPS+=("$ip"); done
-    done
-    if [ ${#ALLOWED_IPS[@]} -eq 0 ]; then
-        echo "[firewall] ERROR: resolved no allowlist IPs — refusing to lock down into a dead end." >&2
-        exit 1
-    fi
-
-    if [ "$USE_IPSET" -eq 1 ]; then
-        # hash:net accepts both single IPs and CIDR ranges.
-        # Stage into a fresh set, then swap atomically (refresh-safe for long runs).
-        ipset create "$IPSET" hash:net 2>/dev/null || true
-        ipset create "${IPSET}-new" hash:net 2>/dev/null || ipset flush "${IPSET}-new"
-        for ip in "${ALLOWED_IPS[@]}"; do
-            ipset add "${IPSET}-new" "$ip" 2>/dev/null || true
+    if [ "$BACKEND" = per-ip ]; then
+        for chain in "$CHAIN_A" "$CHAIN_B"; do
+            if ! grep -q "^-N $chain$" <<< "$RULES"; then
+                iptables -N "$chain"
+            fi
+            iptables -F "$chain"
         done
-        ipset swap "${IPSET}-new" "$IPSET"
-        ipset destroy "${IPSET}-new"
+        NEXT="$CHAIN_A"
     fi
+fi
 
-    flush_rules
+if [ "$BACKEND" = ipset ]; then
+    ipset create "${IPSET}-new" hash:net -exist
+    ipset flush "${IPSET}-new"
+    for ip in "${ALLOWED_IPS[@]}"; do
+        ipset add "${IPSET}-new" "$ip" -exist
+    done
+else
+    iptables -F "$NEXT"
+    for ip in "${ALLOWED_IPS[@]}"; do
+        iptables -A "$NEXT" -p tcp --dport 443 -d "$ip" -j ACCEPT
+    done
+fi
+
+if [ "$INITIAL" -eq 1 ]; then
+    # Filesystem and kernel commits are not one transaction. Publish intent BEFORE
+    # installing rules; an interrupted initial install requires a fresh container.
+    # DNS/staging failures above are still retryable because no live rules changed.
+    printf '%s\n' "${DOMAINS[@]}" > "$PENDING"
+    printf '%s\n' "$BACKEND" > "$BACKEND_FILE"
     iptables -N "$MARKER"
+    iptables -P OUTPUT DROP
+    iptables -P INPUT DROP
+    iptables -P FORWARD DROP
+    iptables -F INPUT
+    iptables -F OUTPUT
+    iptables -F FORWARD
 
-    # Inbound: loopback + replies only.
     iptables -A INPUT -i lo -j ACCEPT
     iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-    iptables -P INPUT DROP
-
-    # Outbound: loopback (incl. Docker's 127.0.0.11 DNS), replies, DNS, HTTPS to allowlist.
     iptables -A OUTPUT -o lo -j ACCEPT
     iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
     iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
     iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
-    if [ "$USE_IPSET" -eq 1 ]; then
-        iptables -A OUTPUT -p tcp --dport 443 -m set --match-set "$IPSET" dst -j ACCEPT
+    iptables -N "$DISPATCH"
+    if [ "$BACKEND" = ipset ]; then
+        ipset create "$IPSET" hash:net -exist
+        ipset swap "${IPSET}-new" "$IPSET"
+        iptables -A "$DISPATCH" -p tcp --dport 443 -m set --match-set "$IPSET" dst -j ACCEPT
     else
-        for ip in "${ALLOWED_IPS[@]}"; do
-            iptables -A OUTPUT -p tcp --dport 443 -d "$ip" -j ACCEPT
-        done
+        iptables -A "$DISPATCH" -j "$NEXT"
     fi
-    # Fail fast (REJECT) rather than hang (DROP) — an autonomous agent should see
-    # "connection refused" immediately, not wait out TCP timeouts.
+    iptables -A OUTPUT -j "$DISPATCH"
+    # Preserve fail-fast refusals. DROP policies are the backstop, not the normal
+    # blocked-connection path an autonomous agent would otherwise hang on.
     iptables -A OUTPUT -p tcp -j REJECT --reject-with tcp-reset
     iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable
-    iptables -P OUTPUT DROP
-    iptables -P FORWARD DROP
+    snapshot_layout > "$LAYOUT_FILE"
+    mv -T "$PENDING" "$COMMITTED"
+elif [ "$BACKEND" = ipset ]; then
+    ipset swap "${IPSET}-new" "$IPSET"
+else
+    # This single rule replacement is the commit. The kernel target, not a file
+    # written after this command, is authoritative if this process is interrupted.
+    iptables -R "$DISPATCH" 1 -j "$NEXT"
+fi
 
-    echo "[firewall] LOCKDOWN active. Allowed: ${DOMAINS[*]}"
+# Cleanup never rolls back a committed update. If it fails, the new allowlist is
+# active; its unused predecessor will be cleared when the next candidate is staged.
+if [ "$BACKEND" = ipset ]; then
+    ipset destroy "${IPSET}-new"
+elif [ "$INITIAL" -eq 0 ]; then
+    iptables -F "$ACTIVE"
+fi
 
-    # Commit the allowlist now that the rules are actually in place — not earlier, so a
-    # first lockdown that bailed out (e.g. resolved nothing) doesn't pin a bad list and
-    # leave a legitimate retry unable to correct it.
-    if [ ! -s "$COMMITTED" ]; then
-        printf '%s\n' "${DOMAINS[@]}" > "$COMMITTED"
-        chmod 600 "$COMMITTED"
-    fi
+echo "[firewall] LOCKDOWN active ($BACKEND). Allowed: ${DOMAINS[*]}"
 
-    # Smoke test: positive probe = first non-CIDR domain of the active allowlist
-    # (callers pass their own set — e.g. run-copilot passes GitHub endpoints); any
-    # HTTP response counts as reachable. Negative probe (example.com) stays fatal.
-    if [ -z "$SMOKE_HOST" ]; then
-        echo "[firewall] NOTE: allowlist is CIDR-only; skipping positive smoke test"
-    elif curl -s -m 8 -o /dev/null "https://${SMOKE_HOST}"; then
-        echo "[firewall] OK: ${SMOKE_HOST} reachable"
-    else
-        echo "[firewall] WARN: ${SMOKE_HOST} NOT reachable — agent will not work" >&2
-    fi
-    if curl -s -m 5 -o /dev/null https://example.com; then
-        echo "[firewall] WARN: example.com reachable — lockdown NOT effective!" >&2
-        exit 1
-    else
-        echo "[firewall] OK: non-allowlisted egress refused"
-    fi
-    ;;
-
-*)
-    echo "Usage: init-firewall.sh open | lockdown [domain ...]" >&2
-    exit 2
-    ;;
-esac
+# Any HTTP response counts as reachable. Both probe failures stop initial agent
+# startup; a refresh error is surfaced by the launcher without opening the network.
+if [ -z "$SMOKE_HOST" ]; then
+    echo "[firewall] NOTE: allowlist is CIDR-only; skipping positive smoke test"
+elif curl -s -m 8 -o /dev/null "https://${SMOKE_HOST}"; then
+    echo "[firewall] OK: ${SMOKE_HOST} reachable"
+else
+    die "${SMOKE_HOST} NOT reachable"
+fi
+if curl -s -m 5 -o /dev/null https://example.com; then
+    die "example.com reachable — lockdown NOT effective"
+else
+    echo "[firewall] OK: non-allowlisted egress refused"
+fi

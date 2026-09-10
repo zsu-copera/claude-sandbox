@@ -78,7 +78,9 @@ mkdir -p "$COPILOT_DIR"
 (
     while true; do
         sleep 900
-        sudo /usr/local/bin/init-firewall.sh lockdown "${MODE_DOMAINS[@]}" >/dev/null 2>&1 || true
+        if ! sudo /usr/local/bin/init-firewall.sh lockdown "${MODE_DOMAINS[@]}" >/dev/null; then
+            echo "[firewall] WARN: allowlist refresh failed; restrictions retained. Check the firewall error above; provider connectivity may degrade." >&2
+        fi
     done
 ) &
 REFRESH_PID=$!

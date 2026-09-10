@@ -255,27 +255,39 @@ else
                       || fail S10 "an agent guardrail was removed from overlay settings" "missing/changed:$s10_bad"
 fi
 
-# --- S11  the one-way door -----------------------------------------------------------------
-open_block=$(sed -n '/^open)/,/^[[:space:]]*;;/p' container/init-firewall.sh 2>/dev/null)
-if echo "$open_block" | grep -q 'iptables -n -L "\$MARKER"'; then
-    if echo "$open_block" | grep -q 'claude-lockdown-domains'; then
-        pass S11 "open refuses after lockdown, via both the marker chain and the committed list"
-    else
-        warn S11 "open guards on the marker chain only (finding E1)" \
-                 "The marker is destroyed by flush_rules during every 15-min refresh, so there is a
-        window where 'open' is accepted. Add a check on /run/claude-lockdown-domains, which
-        is root-owned and survives the flush. This warning is E1a's tracker."
-    fi
+# --- S11  one-way state and staged updates (source structure, not runtime proof) ------------
+firewall=container/init-firewall.sh
+open_block=$(sed -n '/^if \[ "\$MODE" = open \]; then/,/^fi$/p' "$firewall")
+state_block=$(sed -n '/^has_state()/,/^}/p' "$firewall")
+restricted_code=$(sed '/^if \[ "\$MODE" = open \]; then/,/^fi$/d' "$firewall" | grep -vE '^[[:space:]]*#')
+l_lock=$(line_of "$firewall" '^flock -w 30 9$')
+l_open=$(line_of "$firewall" '^if \[ "\$MODE" = open \]; then$')
+if [ -n "$l_lock" ] && [ -n "$l_open" ] && [ "$l_lock" -lt "$l_open" ] \
+    && echo "$open_block" | grep -q 'if has_state; then' \
+    && echo "$open_block" | grep -q 'exit 3' \
+    && echo "$state_block" | grep -Fq '[ -e "$COMMITTED" ]' \
+    && echo "$state_block" | grep -Fq '[ -e "$PENDING" ]' \
+    && echo "$state_block" | grep -Fq '($MARKER|$DISPATCH)' \
+    && ! echo "$restricted_code" | grep -Eq 'iptables -P [A-Z]+ ACCEPT|iptables -F$|iptables -X' \
+    && echo "$restricted_code" | grep -Fq 'ipset swap "${IPSET}-new" "$IPSET"' \
+    && echo "$restricted_code" | grep -Fq 'iptables -R "$DISPATCH" 1 -j "$NEXT"'; then
+    pass S11 "source declares serialized one-way guards and staged firewall updates" \
+             "Behavior, interruption and concurrency require verify-firewall.sh."
 else
-    fail S11 "the 'open' branch no longer guards against reopening a locked-down container"
+    fail S11 "one-way guards, serialization or staged-update source structure is missing"
 fi
 
 # --- S12  sticky allowlist -----------------------------------------------------------------
-if grep -q 'COMMITTED=/run/claude-lockdown-domains' container/init-firewall.sh 2>/dev/null \
-   && grep -q 'printf .* > "\$COMMITTED"' container/init-firewall.sh 2>/dev/null; then
-    pass S12 "lockdown commits its domain list and reuses it"
+if grep -Fxq 'COMMITTED=/run/claude-lockdown-domains' "$firewall" \
+    && grep -Fxq 'umask 077' "$firewall" \
+    && grep -Fq 'printf ' "$firewall" \
+    && grep -Fq '"${DOMAINS[@]}" > "$PENDING"' "$firewall" \
+    && grep -Fq 'mv -T "$PENDING" "$COMMITTED"' "$firewall" \
+    && grep -Fq 'mapfile -t COMMITTED_DOMAINS < "$COMMITTED"' "$firewall" \
+    && grep -Fq 'DOMAINS=("${COMMITTED_DOMAINS[@]}")' "$firewall"; then
+    pass S12 "source stages a private domain record, publishes it and reuses the pinned list"
 else
-    fail S12 "the sticky-allowlist logic is gone — 'lockdown <own-domains>' becomes an escape hatch"
+    fail S12 "private domain publication or sticky-allowlist source structure is missing"
 fi
 
 # --- S13  capabilities dropped before the agent starts -------------------------------------

@@ -6,7 +6,7 @@
 #
 # Order matters: lockdown first (fails hard if it can't), THEN purge credentials,
 # THEN start the agent. A background loop re-resolves the Anthropic allowlist every
-# 15 min (atomic ipset swap — no gap) since API IPs rotate during long runs.
+# 15 min (staged allowlist updates, without flushing live rules).
 set -euo pipefail
 
 WS=/workspace
@@ -23,7 +23,9 @@ rm -f "$HOME/.npmrc" 2>/dev/null || true             # staged by prepare (carrie
 (
     while true; do
         sleep 900
-        sudo /usr/local/bin/init-firewall.sh lockdown >/dev/null 2>&1 || true
+        if ! sudo /usr/local/bin/init-firewall.sh lockdown >/dev/null; then
+            echo "[firewall] WARN: allowlist refresh failed; restrictions retained. Check the firewall error above; provider connectivity may degrade." >&2
+        fi
     done
 ) &
 REFRESH_PID=$!
