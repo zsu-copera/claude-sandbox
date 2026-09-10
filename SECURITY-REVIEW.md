@@ -238,3 +238,60 @@ References used to qualify the original audit:
 
 These documentation pages can change. Their statements support this dated review;
 they do not replace exercising the exact CLI builds deployed in a future image.
+
+## E1 remediation on a separate branch
+
+Implementation branch: `fix/e1-firewall-transitions`. The original review above
+remains a record of the reviewed image and source, not a claim about this branch.
+
+The candidate serializes firewall operations with a root-owned lock, guards
+reopening with durable and kernel state, and keeps the static firewall in place
+during refresh. Address updates use a staged ipset swap or one jump replacement
+to a staged per-IP chain. The backend is fixed at initial lockdown.
+
+Incomplete initial installation requires a fresh container. Before activation,
+refresh errors retain the previous restrictions; after activation, cleanup or
+probe errors retain the new restrictions. Both launchers now surface refresh
+failures. Initial lockdown requires complete DNS resolution and a successful
+positive probe when a hostname is present, rather than starting with unresolved
+domains or a warning-only provider failure.
+
+S11/S12 now describe their source-structure checks accurately; runtime evidence
+is separate. The static baseline is 21 passed, 1 unresolved S7 failure, 0 warnings,
+and 2 skips (shellcheck and VERSION). S7 is not waived or resolved by E1.
+
+The source-mounted firewall suite returned **54 passed, 0 failed, 0 backend
+skips** against the existing image's iptables 1.8.10 nft backend. Both real ipset
+and per-IP implementations were exercised with controlled peers on an isolated
+internal network. Coverage includes DNS-changing refreshes, forbidden connection
+probes, deterministic concurrent calls, failures before/at/after activation,
+TERM/KILL interruptions followed by retries, pinned state, incomplete
+initialization and smoke-probe failures. The runner rejects a source change
+during the suite. No provider credentials or application workspaces were mounted.
+
+Four additional caller scenarios passed with the current launchers streamed into
+network-disabled containers. Synthetic firewall failures prove that both
+launchers abort before credential purge and agent startup on initial failure,
+and surface refresh errors while a fake CLI continues. These caller scenarios
+use helper/CLI shims; they do not establish real provider connectivity or
+authentication.
+
+A separate real scoped-sudo scenario also passed: after switching to the
+non-root agent identity and clearing capabilities, `sudo` invoked the actual
+firewall helper and `open` returned 3. Direct kernel access, protected-state
+reads/writes and unrelated privileged commands were refused. This network-disabled
+test retains SETUID, SETGID and DAC_OVERRIDE for the scoped elevation; they are
+existing production-default capabilities, not new privileges for the deployed
+agent. Without DAC_OVERRIDE, the artificially reduced test profile prevented PAM
+from reading the image's mode-000 shadow file before the helper could run.
+No account/PAM files were read or changed by the fixture.
+
+The recorded runs are 58 passing firewall/caller scenarios together, followed
+by 1 passing targeted real-sudo scenario, with no failures or skips. They do not
+cover a rebuilt image, real provider sessions or the lock's full timeout duration.
+
+**Deployment remains separate:** the existing `localhost/pera-sandbox` image and
+assembled workspace have not been updated, and `main` and the Documentation
+distribution copy have not been changed. E1 must not be marked resolved for that
+deployed image merely because the branch has a candidate fix. DNS policy, shared
+GitHub ranges, command-hook gaps and unguarded startup are outside this change.

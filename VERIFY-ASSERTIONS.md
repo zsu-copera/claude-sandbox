@@ -1,11 +1,12 @@
 # Verification assertions
 
-The scaffold currently promises around two dozen invariants in prose and checks two of them
-(`init-firewall.sh`'s positive and negative smoke probes). This file is the assertion list that
-closes that gap. It is a **specification, not an implementation** — the judgment is in choosing
-and phrasing the assertions; turning them into bash is mechanical and delegable.
+This is the assertion specification. The S-series is implemented in `verify-scaffold.sh`;
+focused E1 firewall regressions are provided separately in `verify-firewall.sh`. The full
+`verify-sandbox.sh` P/A/G/X lifecycle runner and its startup integration are not implemented.
+The firewall's positive and negative smoke probes remain startup gates, not a substitute
+for the runtime assertions below.
 
-## Two scripts, four modes
+## Static and planned lifecycle checks
 
 The assertions split by what they can observe, and that split is not cosmetic — several
 assertions are impossible in the wrong context.
@@ -53,8 +54,8 @@ delegable to a cheaper agent: it needs no container, so an agent can iterate aga
 | S8 | `overlay/.claude/settings.json` and `container/copilot-settings.json` are valid JSON | `jq empty` | FAIL |
 | S9 | `.devcontainer/devcontainer.json` is valid **JSONC** | it contains `//` comments, so plain `jq` fails — strip comments first or use a JSONC parser. A naive `jq empty` here is a false failure | FAIL |
 | S10 | `overlay/.claude/settings.json` still declares `defaultMode: bypassPermissions`, a non-empty `deny` list, and `sandbox.enabled: true` | `jq` | FAIL |
-| S11 | `init-firewall.sh`'s `open` branch still guards against reopening a locked-down container | grep the branch for the marker-chain check and, once implemented, the `/run/claude-lockdown-domains` check | FAIL |
-| S12 | `lockdown` still commits its domain list and reuses it on later calls | grep for the `COMMITTED` file logic | FAIL |
+| S11 | Source retains serialized durable/kernel guards and staged refresh, without a permissive flush outside `open` | inspect lock ordering, state checks, ipset swap and chain-jump replacement; runtime proof belongs to `verify-firewall.sh` | FAIL |
+| S12 | Source stages a private domain record, atomically publishes it and reuses the committed list | inspect umask, pending-file publication and pinned-domain reuse; not proof of effective ownership or crash behavior | FAIL |
 | S13 | Both entrypoints drop capabilities before exec'ing the agent | grep for `setpriv --inh-caps=-all --ambient-caps=-all` in `run-agent.sh` and `run-copilot.sh` | FAIL |
 | S14 | Every `sudo` call site uses the absolute `/usr/local/bin/init-firewall.sh` | grep `sudo` in all scripts; `Defaults secure_path` excludes `/usr/local/bin`, so a bare name breaks | FAIL |
 | S15 | The Dockerfile's sudoers line is scoped to `init-firewall.sh`, not `ALL` | grep the sudoers `echo`; a `NOPASSWD: ALL` makes the agent effectively root | FAIL |
@@ -125,9 +126,58 @@ opens the network if it succeeds.
 
 | id | Assertion | Method | On fail |
 |---|---|---|---|
-| X1 | `sudo /usr/local/bin/init-firewall.sh open` exits 3 | **If it exits 0 the network is now open** — the check must immediately re-lock and report FAIL loudly. Run only in a throwaway container | FAIL |
-| X2 | `sudo init-firewall.sh lockdown evil.example.com` does not change the allowlist | run it, then confirm `evil.example.com` is still refused and the committed file is unchanged | FAIL |
-| X3 | No egress window during a lockdown refresh | the current `lockdown` flushes to `ACCEPT` policies before rebuilding, so a probe looped across a refresh should catch reachability it must not have. Expect this to FAIL until E1 is fixed — it is the regression test for that fix | FAIL |
+| X1 | `sudo /usr/local/bin/init-firewall.sh open` exits 3 | **If it exits 0 the network is now open** — report FAIL and destroy the disposable test container. Never run against an existing agent session | FAIL |
+| X2 | `sudo /usr/local/bin/init-firewall.sh lockdown evil.example.com` does not change the pinned domains | run it, then confirm the controlled forbidden destination is refused and the committed file is unchanged | FAIL |
+| X3 | No egress window during a lockdown refresh | combine controlled traffic probes with deterministic pauses, concurrent calls, injected failures and kernel-state assertions on both backends; polling alone can miss a short gap | FAIL |
+
+## Focused E1 regressions (`verify-firewall.sh`)
+
+Run from this working copy inside WSL:
+
+```bash
+bash verify-scaffold.sh
+bash verify-firewall.sh --image localhost/pera-sandbox
+```
+
+The static runner still exits nonzero for the unrelated S7 findings. Record that failure;
+do not describe it as a clean gate or suppress new failures.
+
+The firewall runner uses disposable containers and only mounts the candidate firewall
+script and narrow test fixtures, not the workspace, auth volumes or host credentials.
+Caller scenarios stream the current launcher source on stdin into network-disabled
+containers, use a synthetic workspace and helper/CLI shims, and exercise startup failure
+ordering and visible refresh errors. Run those alone with `--callers-only`; they do not
+replace real agent login or provider-connectivity checks.
+
+The separate `--sudo-only` scenario uses actual scoped elevation after switching to the
+agent identity and clearing its capabilities. That disposable, network-disabled container
+retains SETUID/SETGID/DAC_OVERRIDE (existing production defaults needed by sudo/PAM) and
+does not enable no-new-privileges, which would prevent the elevation being exercised.
+It mounts only the candidate firewall source; account/PAM data is not changed. If the
+image's PAM prevents the helper from running, the result is an explicit skip, not a
+successful reopen-refusal assertion.
+
+Controlled destinations and command shims let it exercise DNS changes, failures and
+interruptions without attempting external transmission. This supplies focused coverage
+for A8-A10 and X1-X3, not the full P/A/G/X specification or a no-exfiltration guarantee.
+Missing real-backend coverage must be reported explicitly, not counted as a pass.
+
+The E1 contract is:
+
+- A root-owned lock serializes `open`, first lockdown and refresh. Durable or kernel
+  evidence of initialization blocks reopening, even when another state component is absent.
+- DNS/candidate construction precedes initial installation. Failure here is retryable;
+  once installation intent is recorded, incomplete initialization requires a fresh container.
+- First installation pins the domain list and backend. Refresh never migrates backends.
+- Refresh leaves built-in policies, base rules and marker intact. It activates a staged
+  ipset or per-IP chain atomically; the live kernel target survives interrupted bookkeeping.
+- Pre-activation failures retain the previous rules. Post-activation cleanup/probe failures
+  retain the new rules and report failure. No error path intentionally reopens the network.
+- Both launchers report refresh failures; initial lockdown failure still prevents purge
+  and agent startup. REJECT remains the normal blocked-connection path.
+
+Image packaging and deployment are separate from these source-mounted regressions.
+The existing image is not updated by editing scripts on the host.
 
 ---
 
@@ -142,9 +192,10 @@ opens the network if it succeeds.
 
 ## Notes for whoever implements this
 
-- **The S-series is implemented** in `verify-scaffold.sh` (2026-09-09). The P/A/G/X series are
-  not. Current result on a clean tree: 19 pass, 1 fail (S7, the I1/I2/I3 regression test), 1
-  warn (S11, tracking E1a), 2 skip (no shellcheck, no VERSION).
+- **The S-series is implemented** in `verify-scaffold.sh` (2026-09-09). With the E1 source
+  assertions updated: 21 pass, 1 unresolved failure (S7, I1/I2/I3), 0 warnings, 2 skips
+  (no shellcheck, no VERSION). Focused firewall coverage does not complete the lifecycle
+  P/A/G/X runner.
 - S1 is the assertion most likely to be written wrongly. Two tools lie here: `grep -c $'\r'`
   can match every line in Git Bash, and `file(1)` omits its CRLF note in some builds. Count
   bytes — `tr -d '\015' < f | cmp -s - f` is the cheap form.
@@ -159,7 +210,8 @@ opens the network if it succeeds.
   across many files to one grep per file, and never recurse a sibling repo — asking
   `git -C ../prj ls-files '*pom.xml'` for S19 rather than walking `../prj` cut the total runtime
   by a third on its own.
-- Nothing in this list needs network access except A3–A7 and P8.
+- A3–A7 and P8 need their documented endpoints; focused E1 traffic stays on isolated test
+  networking without an external route.
 - Keep each assertion independent — no shared state, no ordering dependency — so a failure
   localizes. `set -e` is wrong for this script; collect results and exit at the end.
 - Assertions S11–S18 and A8–A11 exist to stop an isolation invariant regressing silently. When

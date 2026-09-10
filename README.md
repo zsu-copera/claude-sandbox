@@ -17,6 +17,8 @@ CLI, `--allow-all-tools`). Isolation layers:
    **Lockdown is one-way:** the agent holds passwordless sudo for `init-firewall.sh` alone,
    so the script refuses `open` once its container has locked down, and pins the allowlist
    the first lockdown committed to — a later `lockdown <other-domains>` is ignored.
+   Firewall operations are serialized. Refresh stages a replacement allowlist without
+   flushing live rules; an interrupted initial installation also prevents reopening.
 3. **Agent-native guardrails** — Claude: settings deny rules **plus a working bubblewrap
    sandbox** on every Bash command (capabilities are dropped before the agent starts, which
    is what bwrap needs — see the FAQ); Copilot: deny-tool/deny-url flags + built-in GitHub
@@ -79,7 +81,7 @@ current branch — no SSH keys, LF endings), overlays the git-ignored AI assets
 stages the corp CAs, and copies `~\.m2\settings.xml` + `~\.npmrc` into `.secrets/`
 (purged before the agent runs). `--force` rebuilds fresh — recommended per task/ticket.
 
-### 2. Build the image (only when the Dockerfile changes)
+### 2. Build the image (when the Dockerfile or image-installed files change)
 
 ```bash
 # inside: wsl -d centos-9
@@ -128,9 +130,24 @@ podman run -it --name pera-agent --rm --userns=keep-id \
 
 `run-agent` locks the firewall (Anthropic-only; self-tests that api.anthropic.com is
 reachable AND example.com is refused — refuses to start otherwise), purges `.secrets/` and
-`~/.npmrc`, re-resolves allowlist IPs every 15 min, then starts
+`~/.npmrc`, schedules allowlist IP refreshes every 15 min, then starts
 `claude --dangerously-skip-permissions`. First ever run: complete the login flow (auth
 persists in the `pera-claude-config` volume) and confirm the bypass prompt.
+
+**Firewall refresh and recovery:** the initial installation creates the default-deny
+rules and pins both the domain list and the selected backend. Later refreshes keep those
+rules in place: an ipset swap, or replacement of one jump to a staged per-IP chain,
+activates the new addresses. All configured domains must resolve; incomplete DNS results
+or staging failures leave the previous snapshot active. Errors are visible on stderr.
+An error after activation (for example, obsolete-rule cleanup or a provider probe) does
+not undo the new restrictions. The agent can continue under the retained rules, but
+provider connectivity may degrade until a refresh succeeds.
+
+The root-owned `/run/claude-firewall` state and `/run/claude-lockdown-domains` belong to
+one container, not the workspace. Interrupted initial installation or inconsistent state
+refuses both reopening and another lockdown; start a fresh container using the same
+workspace instead of deleting that state or flushing its firewall. Existing containers
+created by older firewall scripts are not migrated in place.
 
 **Session lifecycle:** exiting Claude removes the container (`--rm`) and its firewall with
 it — nothing keeps running on the host (`podman ps` should be empty). The workspace, agent
@@ -249,8 +266,9 @@ VS Code option: install the Dev Containers extension, set `dev.containers.docker
   agent effectively root, able to flush the firewall or read past the settings deny rules.
   Any new call site must use the absolute path, since `Defaults secure_path` excludes
   `/usr/local/bin`.
-- **ipset fallback:** under rootless podman, init-firewall.sh auto-falls back to per-IP
-  iptables rules when ipset can't be created in the user namespace.
+- **ipset fallback:** initial lockdown selects per-IP rules if ipset cannot be created
+  in the user namespace. That selection is fixed for the container; a refresh failure
+  never triggers a live backend migration.
 - **Login not persisting?** Two past causes, both fixed in the current image: the
   `pera-claude-config` volume must be created by a `--userns=keep-id` container (one made
   without it is unwritable — `podman volume rm pera-claude-config` and re-login), and
@@ -270,7 +288,7 @@ VS Code option: install the Dev Containers extension, set `dev.containers.docker
 | `new-sandbox.sh` | Assemble `~/pera-sandbox` inside the WSL distro (**primary path**) |
 | `New-Sandbox.ps1` | Windows/Docker-Desktop variant of the same (kept for parity) |
 | `.devcontainer/{devcontainer.json,Dockerfile}` | Container definition (CentOS Stream 9) |
-| `container/init-firewall.sh` | `open` \| `lockdown [domains...]` (atomic swap, REJECT; smoke-tests first listed domain) |
+| `container/init-firewall.sh` | Serialized `open` \| `lockdown [domains...]`; durable one-way state, staged refresh, REJECT |
 | `container/prepare.sh` → `prepare-sandbox` | Warm caches via Nexus with network open |
 | `container/run-agent.sh` → `run-agent` | Lockdown (Anthropic) → purge creds → start Claude |
 | `container/run-copilot.sh` → `run-copilot` | Lockdown (Copilot hosts; `--login` adds github.com once) → purge creds → start Copilot CLI |
@@ -280,3 +298,5 @@ VS Code option: install the Dev Containers extension, set `dev.containers.docker
 | `container/certs/` | (generated) corp root CAs staged by new-sandbox.sh |
 | `overlay/CLAUDE.md` | Sandbox-adapted instructions the agent boots with |
 | `overlay/.claude/settings.json` | bypassPermissions + deny rules + native sandbox |
+| `verify-scaffold.sh` | Host-side static assertions |
+| `verify-firewall.sh`, `tests/firewall/` | E1 regressions in disposable containers, without workspace or credential mounts |

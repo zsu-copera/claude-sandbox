@@ -84,7 +84,9 @@ before touching the code.
   down, and the first successful lockdown pins its domain list in
   `/run/claude-lockdown-domains` (root-owned) so later lockdowns cannot substitute a different
   allowlist. The agent has passwordless sudo for this one script; without both guards that sudo
-  is an escape hatch.
+  is an escape hatch. A root-owned lock serializes operations. Refresh never flushes live
+  rules: it swaps an ipset or one jump to a staged per-IP chain. Interrupted initial
+  installation also blocks reopening; do not delete its state to recover.
 - **Sudo is scoped to `init-firewall.sh`, not `ALL`.** Call sites must use the absolute path
   `/usr/local/bin/init-firewall.sh` — `Defaults secure_path` excludes `/usr/local/bin`.
 - **Blocked egress REJECTs rather than DROPs**, so an autonomous agent fails fast instead of
@@ -109,17 +111,21 @@ cheapest rung that actually covers your change.
 1. **Static checks — no container.** Run `./verify-scaffold.sh`. It checks line endings, shell
    syntax, JSON validity, the absence of personal paths, and that every isolation invariant
    above is still present in the source. **Run it after every edit**, and expect a clean run to
-   report `19 passed, 1 failed` — S7 fails on purpose until findings I1/I2/I3 are fixed, and
-   S11 warns until E1 is. A *new* failure is yours.
+   report `21 passed, 1 failed` — S7 remains an unresolved failure until findings
+   I1/I2/I3 are fixed; S3 and S20 skip without shellcheck and VERSION. A *new* failure is
+   yours. S11/S12 check source structure, not runtime containment.
 2. **Container, already built.** An image (`localhost/pera-sandbox`) and an assembled, warmed
    sandbox (`~/pera-sandbox` inside the `centos-9` WSL distro) already exist, so in-container
    assertions run in seconds rather than after a 30–60 minute prepare. Anything touching the
-   firewall, capabilities, or the purge belongs here.
+   firewall, capabilities, or the purge belongs here. Run `bash verify-firewall.sh` inside
+   WSL for focused E1 regressions using disposable containers; never run adversarial
+   firewall probes against an existing agent session.
 3. **Full rebuild + prepare — 30–60 minutes.** Only for Dockerfile changes or a new Maven
    profile. Say so rather than doing it unasked.
 
-Nothing in this repository is currently checked by CI or by any script. Until
-`VERIFY-ASSERTIONS.md` is implemented, "verified" means a human ran something and watched it.
+There is no CI gate. Static assertions and focused firewall regressions do not implement
+the complete P/A/G/X runtime specification in `VERIFY-ASSERTIONS.md`. Editing a script here
+does not update its baked image copy; packaging and real-session rollout are separate steps.
 
 ## Promotion, and an open decision
 
