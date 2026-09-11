@@ -91,11 +91,42 @@ Prepare is a *separate* container, so it is unaffected.
 Yes, if the task builds or tests anything: `--force` wipes the workspace *including* all
 warmed caches (`.m2`, node installs, `node_modules`), so a fresh copy is a cold copy —
 regardless of which branch it's on. Skip prepare only for prose/analysis-only tasks.
-Advanced shortcut: keep the existing warmed sandbox and switch its branch from the host
-(`git -C ~/pera-sandbox/prj fetch /mnt/c/work/pera/prj <branch>:<branch>` + checkout) —
-prepare stays skippable as long as poms/lockfiles/nodeVersion pins didn't change and the
-task stays in warmed modules. Only do this when the previous task was cleanly harvested;
-a wrong guess fails fast with "connection refused" and you just run prepare then.
+For another brief or review round of the same task, do not reset or switch branches.
+Use the [round import workflow](QUICKSTART.md#continue-a-task-through-review-rounds)
+with the existing warmed workspace. Moving to a different code baseline is a separate
+integration decision, not an automatic side effect of importing instructions.
+
+**How do I bring in external review findings without losing the agent's work?**
+Commit the selected brief documents outside the sandbox, export a packet, preview it,
+then apply it with the previewed target HEAD while the agent is stopped.
+`sandbox-round.sh` adds a new round directory and local commit; it does not merge the
+external branch or overwrite canonical files. Reuse the workspace and normal guarded
+launcher. No dependency download is needed simply to read another brief.
+
+**Why did the import refuse a dirty repository or changed HEAD?**
+The tool will not hide or discard work to make an import succeed. Finish/commit or
+resolve the existing work, then preview again. A stale preview is not authorization
+to overwrite a newer state. Ignored build assets may remain, but non-ignored untracked
+files also need attention. Do not use a reset to bypass this check.
+
+**Can I revise an already imported round?**
+Use a new round ID. An identical packet can be replayed without another commit,
+but different content or changes inside the existing snapshot are a conflict.
+Round directories preserve what the agent was actually given, not a moving pointer
+to the external branch. Relative links to unselected documents may need the original
+repository paths recorded in the manifest.
+
+**Does the importer need access to Nexus, agent credentials or the source working copy?**
+The exporter reads the selected source repo read-only. The separate importer receives
+only the packet, selected target repo, trusted helper and private recovery state.
+Both run with networking disabled and no elevated capabilities. The source working
+copy is never mounted into the importer, and repository hooks/filters are not executed.
+
+**An import was interrupted. Should I delete its Git locks?**
+No. Use the tool's `recover` operation with the original packet and current expected
+HEAD. It either removes the exact pre-commit round snapshot or finishes a committed
+import's index publication. Unexpected subsequent edits are not overwritten.
+Keep recovery state outside the workspace; do not delete it to make the error disappear.
 
 **Which Maven profiles work offline?**
 Only what prepare warmed. Default `agencyWWW` also covers `agencyintra` (same modules;

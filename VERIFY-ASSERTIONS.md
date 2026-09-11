@@ -15,6 +15,7 @@ assertions are impossible in the wrong context.
 |---|---|---|---|
 | `verify-scaffold.sh` | (none) | Windows host, Git Bash or WSL, against this directory | seconds, no container |
 | `verify-firewall.sh` | default / `--callers-only` / `--sudo-only` | WSL/Podman, disposable containers with candidate source | targeted modes are quicker; full suite takes minutes |
+| `verify-rounds.sh` | default | WSL/Podman, disposable repositories and operator-command fixtures | no prepare or real task workspace |
 | `verify-sandbox.sh` | `--post-prepare` | End of `prepare.sh`, network still open | seconds |
 | `verify-sandbox.sh` | `--pre-agent` | In `run-agent`/`run-copilot` after lockdown, **still holding capabilities** | seconds |
 | `verify-sandbox.sh` | `--as-agent` | Invoked *through* the `setpriv` wrapper, i.e. with the agent's own privileges | seconds |
@@ -45,7 +46,7 @@ delegable to a cheaper agent: it needs no container, so an agent can iterate aga
 
 | id | Assertion | Method | On fail |
 |---|---|---|---|
-| S1 | Zero CR bytes in every `*.sh`, `Dockerfile`, `dockerignore`, `*.json`, and `overlay/CLAUDE.md` | count `0x0d` bytes; **do not** use `grep -c $'\r'`, which false-positives in Git Bash — use `od -An -tx1 -v` or `awk '/\r$/'` | FAIL |
+| S1 | Zero CR bytes in tracked/unignored shell, JavaScript, JSON, Markdown, PowerShell and build-definition text | count `0x0d` bytes; **do not** use `grep -c $'\r'`, which false-positives in Git Bash — use `od -An -tx1 -v` or `awk '/\r$/'` | FAIL |
 | S2 | Every `*.sh` parses | `bash -n` | FAIL |
 | S3 | No `shellcheck` errors (warnings allowed) | `shellcheck -S error`, `SKIP` if absent | WARN |
 | S4 | Every path the Dockerfile `COPY`s from `container/` exists | parse `COPY container/...` lines | FAIL |
@@ -188,6 +189,55 @@ Image packaging and deployment are separate from these source-mounted regression
 The existing image is not updated by editing scripts on the host.
 
 ---
+
+## Review-round imports (`verify-rounds.sh`)
+
+Run `bash verify-rounds.sh` in WSL against the trusted scaffold for the Node fixture
+suite. Add `--integration` to exercise the actual operator wrapper too; that mode
+must start from an ordinary WSL Linux-filesystem directory outside the scaffold and
+retained sandbox:
+
+```bash
+cd "$HOME"
+bash /mnt/c/work/pera/claude-sandbox/verify-rounds.sh --integration
+```
+
+The wrapper integration creates and removes only its uniquely named fixture directory
+under that working directory. It uses the existing image and disposable repositories,
+not the assembled task workspace. No prepare, authenticated agent session or image
+rebuild is needed. `--test-name-pattern recovery` selects only the Node recovery cases.
+
+The required contract covers committed-only document export, exact packet checksums,
+append-only import commits, clean/stale/in-progress repository refusals, unsafe paths,
+source/target mount separation, active-container refusal and identical-packet replay.
+Two-round cases must preserve prior agent commits, unrelated files and cache sentinels.
+Hooks, filters and other repository-provided executables must not run during intake.
+
+Interruption cases must include preparation before locks, staging, snapshot publication,
+ref updates, index publication and interrupted recovery itself. A preparation journal
+must exist before persistent Git locks. Individual refs and the index have separate
+publication points; recovery must handle their partial outcomes rather than claiming
+one crash-atomic transaction spans the filesystem and both refs. Only matching
+journal-owned artifacts may be removed or completed; changed work must be preserved.
+
+These synthetic fixtures establish import behavior, not that a new task's dependencies
+are already cached or that its application tests pass. The real task trial, E1 image
+deployment and model/reviewer orchestration remain separate steps.
+
+Implementation: `292bed3` on `feat/sandbox-round-imports`; no retained task workspace
+was changed and no image was rebuilt for this feature.
+
+Recorded 2026-09-11: the initial 56 Node tests and actual WSL wrapper integration passed.
+Three additional packet-boundary cases and nine fixture-cleanup cases were then covered
+by a passing targeted run; wrapper integration was repeated after the cleanup guard changed.
+The configured suite now contains 68 tests, not a claim that all 68 ran in one invocation.
+Integration covers two rounds, preserved originals/caches, preview/replay/refusal paths and
+the active-container guard. Cleanup retains fixture data if any surviving container still
+mounts it or mount absence cannot be established.
+
+Process-kill and interrupted-recovery cases are covered, not power loss or storage
+corruption. The static baseline remains 21 passed, the unresolved S7 failure, 0 warnings
+and 2 skips; no real task repository was used.
 
 ## Deliberately not asserted
 

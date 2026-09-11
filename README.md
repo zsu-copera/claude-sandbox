@@ -73,6 +73,13 @@ or after review (trusted).
 [review]   (host)            git log/diff in the sandbox -> fetch into real repo -> push
 ```
 
+For repeated review rounds, keep the same workspace and caches. The operator can
+export selected committed brief files with `sandbox-round.sh`, preview the intake,
+then explicitly apply them as a new local round commit. This does not clone/reset
+the workspace, merge an outside branch or invoke prepare. The agent then reads
+`sandbox-rounds/<task>/<round>/README.md` in the selected repository.
+See [the round workflow](QUICKSTART.md#continue-a-task-through-review-rounds).
+
 ## Usage
 
 ### 1. Assemble the sandbox (from Windows)
@@ -327,3 +334,37 @@ VS Code option: install the Dev Containers extension, set `dev.containers.docker
 | `verify-firewall.sh`, `tests/firewall/` | E1 regressions in disposable containers, without workspace or credential mounts |
 | `SECURITY-REVIEW.md` | Original audit reconciliation, E1 commit/evidence record and deployment status |
 | `VERIFY-ASSERTIONS.md` | Implemented checks, planned lifecycle assertions and coverage limits |
+| `sandbox-round.sh`, `tools/rounds/rounds.js` | Operator-only export/preview/apply/recover for append-only committed brief snapshots |
+| `verify-rounds.sh`, `tests/rounds/` | Disposable round-import and recovery regressions |
+
+## Review-round import boundary
+
+The importer is an operator tool run from the trusted scaffold in WSL. Export reads
+only explicitly selected committed `.md`/`.txt` blobs; it ignores uncommitted source
+edits. Apply adds a versioned snapshot under `sandbox-rounds/<task>/<round>/` and
+commits it on the existing sandbox branch, preserving original files and earlier
+agent commits. The source commit and blob/content hashes are recorded, but outside
+Git ancestry is not imported. Packet checksums establish integrity, not authorship
+or trustworthiness of the instructions.
+
+Export and import use separate network-disabled, capability-free maintenance
+containers. The import container never mounts the external working copy, auth
+volumes, workspace-root build credentials or Maven cache. Git runs with private
+control metadata rather than the repository's executable hooks/filter configuration.
+Only the selected target repo and its private recovery state are writable.
+
+Keep packets and recovery state outside the agent workspace. The wrapper serializes
+operations and refuses known active containers with overlapping workspace mounts;
+also stop manual edits and Git operations. This is a cooperative workflow guard,
+not protection from another host process deliberately ignoring locks.
+
+The initial tool supports ordinary clones with `.git` directories, not linked
+worktrees, submodules or alternate object stores. It refuses dirty/non-ignored
+untracked work, ongoing Git operations, unsafe/symlinked paths, stale expected HEADs
+and conflicting round IDs. Identical repeated packets do not create another commit.
+Apply also requires an existing per-repository Git identity; it does not invent an
+author or borrow the source commit's identity. Snapshots are Git-versioned task data,
+not root-owned policy: the importer detects changed replay content, while the agent
+is instructed to leave input snapshots unchanged.
+It does not replace canonical instructions, change model settings, launch reviewers,
+modify dependency manifests, restore deleted caches or automate result harvesting.

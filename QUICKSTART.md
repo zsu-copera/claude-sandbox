@@ -138,15 +138,87 @@ Anthropic allowlist. Deny rules and the policy hook reduce accidental writes but
 known gaps; the firewall does not distinguish GitHub hosting from Copilot transport.
 Read [README §4b](README.md#4b-github-copilot-cli-variant) before unattended use.
 
+## Continue a task through review rounds
+
+Assemble and warm once for the task. For each subsequent brief or external review,
+keep the same workspace: **export committed documents -> preview -> apply -> run
+the agent -> review/harvest**. Stop the agent and other users of that workspace
+before importing. Commit or otherwise resolve its pending work; the importer does
+not stash, discard or merge it automatically.
+
+These commands run inside WSL from the trusted scaffold. The example uses
+`Documentation`; use `--repository prj` and the corresponding source repo for briefs
+committed in the codebase. Replace the example task and document paths.
+
+```bash
+SCAFFOLD=/mnt/c/work/pera/claude-sandbox
+PACKETS="$HOME/sandbox-round-packets"
+mkdir -p "$PACKETS"
+chmod 700 "$PACKETS"
+
+bash "$SCAFFOLD/sandbox-round.sh" export \
+  --source /mnt/c/work/pera/Documentation \
+  --repository Documentation --ref HEAD --task EPD-123 --round 02 \
+  --path External-Team/EPD-123/review-findings.md \
+  --output "$PACKETS/EPD-123-02.json"
+
+bash "$SCAFFOLD/sandbox-round.sh" preview \
+  --workspace "$HOME/pera-sandbox" --repository Documentation \
+  --packet "$PACKETS/EPD-123-02.json"
+```
+
+Commit the external brief before export: `HEAD` selects committed contents, not the
+source working tree. Additional `--path` arguments select more documents from that
+same commit. Only those files move; external code changes and unselected references
+do not come with them. Export refuses to overwrite an existing packet.
+
+Inspect the preview, then copy its full `head` into the explicit apply command:
+
+```bash
+EXPECTED_HEAD=PASTE_FULL_HEAD_FROM_PREVIEW
+bash "$SCAFFOLD/sandbox-round.sh" apply \
+  --workspace "$HOME/pera-sandbox" --repository Documentation \
+  --packet "$PACKETS/EPD-123-02.json" --expected-head "$EXPECTED_HEAD"
+```
+
+Apply creates a local commit containing
+`Documentation/sandbox-rounds/EPD-123/02/README.md`, the provenance manifest and
+`files/<original-path>` snapshots. It does not overwrite the originals or bring in
+the source branch's commits. Imported bytes are preserved with directory-local Git
+attributes; no global Git or agent settings are changed.
+
+Restart with the usual guarded step-4 command and explicitly tell the agent to read
+`/workspace/Documentation/sandbox-rounds/EPD-123/02/README.md` and follow that round's
+brief. Resolve referenced files using the original paths in the manifest; do not
+assume those references were also refreshed. For the next external review, use a
+new round ID and packet. If both repos need inputs, import them separately: there
+is no cross-repository atomic transaction.
+
+No prepare is required merely for the imported documents. If the resulting task
+needs new dependencies or an unwarmed profile, use a separate prepare container;
+never reopen the agent container. A changed code baseline requires separate,
+reviewed integration or assembly, not a brief import masquerading as a branch sync.
+
+**Interrupted import:** keep the original packet and recovery state. The error
+identifies a pending import; use `recover` with that packet, repository/workspace and
+the current expected HEAD. Before the Git commit activates, recovery removes only
+the matching round snapshot. After activation, it completes the matching prepared
+index. Changed HEAD/index/snapshot contents require inspection rather than a forced
+reset. Do not delete Git locks or private recovery files to bypass the guard.
+
+The tool does not start an agent, enforce the internal reviewer loop or harvest
+results. Those remain explicit steps; a completed import is not task acceptance.
+
 ## Update the firewall without resetting the workspace
 
 For the E1 update, the sequence is **reviewed scaffold -> refreshed build context ->
 rebuilt image -> new container**. A fresh container from the old image still has the
-old firewall. Implementation is on `fix/e1-firewall-transitions`; deployment is a
+old firewall. E1 originated on `fix/e1-firewall-transitions` and is included in the
+review-round feature branch; deployment is a
 separate step tracked in [SECURITY-REVIEW.md](SECURITY-REVIEW.md#e1-remediation-on-a-separate-branch).
 
-1. Exit the current agent normally. Confirm that the working scaffold has the reviewed
-   E1 branch checked out. Review the assembled build context before building from it;
+1. Exit the current agent normally. Confirm that the working scaffold contains the reviewed
+   E1 changes. Review the assembled build context before building from it;
    agent-written files are not automatically trusted. Do not run `new-sandbox.sh --force`
    for this update.
 2. Refresh the E1 build inputs from the trusted scaffold, inside WSL:

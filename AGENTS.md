@@ -50,7 +50,8 @@ procedure, `FAQ.md` for troubleshooting. Do not duplicate their content here.
   `New-Sandbox.ps1` is unsupported drift, not the supported assembly path.
 - **This directory is its own git repository** (standalone, default branch `main`, no remote
   yet — see Promotion). Inspect the current branch before working; E1 is being maintained
-  on `fix/e1-firewall-transitions`, separately from `main`. Commit as you go, in small
+  on `fix/e1-firewall-transitions`, and round intake on `feat/sandbox-round-imports`,
+  separately from `main`. Commit as you go, in small
   reviewable steps; a change that cannot be described in
   one line is usually two changes. `git diff` is the review surface, so leave the tree clean
   when you stop.
@@ -123,6 +124,8 @@ cheapest rung that actually covers your change.
    firewall, capabilities, or the purge belongs here. Run `bash verify-firewall.sh` inside
    WSL for focused E1 regressions using disposable containers; never run adversarial
    firewall probes against an existing agent session.
+   `bash verify-rounds.sh` covers round imports with disposable repositories; do not
+   exercise failure recovery against a real task workspace.
 3. **Packaging / prepare.** Dockerfile or image-installed script/policy changes require
    a refreshed build context, rebuilt image and new container for deployment. An image
    rebuild does not automatically require another prepare of an existing warmed workspace;
@@ -132,6 +135,19 @@ cheapest rung that actually covers your change.
 There is no CI gate. Static assertions and focused firewall regressions do not implement
 the complete P/A/G/X runtime specification in `VERIFY-ASSERTIONS.md`. Editing a script here
 does not update its baked image copy; packaging and real-session rollout are separate steps.
+
+## Persistent task rounds
+
+Use `sandbox-round.sh` from this trusted scaffold for operator-controlled brief intake.
+It exports explicitly selected committed documents and imports append-only snapshots,
+not external branches, into an existing warmed task repository. Do not reset, re-clone,
+rewarm, stash changes or overwrite canonical instructions merely to advance a review round.
+Packets and recovery journals stay outside the workspace; only the imported snapshots
+are visible to the agent. Read QUICKSTART for the command sequence and recovery contract.
+
+Keep import containers network-disabled and unprivileged, with only the selected repo
+and private recovery state writable. Do not replace this with host Git operations that
+can execute hooks or filters from agent-controlled repository configuration.
 
 ## Promotion, and an open decision
 
