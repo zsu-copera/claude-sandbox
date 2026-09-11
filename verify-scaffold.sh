@@ -64,8 +64,8 @@ list_files() {
 # Compute the file lists ONCE. Each list_files call spawns git, and on Git Bash process
 # creation dominates the runtime — recomputing these per assertion cost ~60s.
 SHELL_SCRIPTS=$(list_files '*.sh')
-TEXT_FILES=$(printf '%s\n%s\n%s\n%s\n' \
-    "$SHELL_SCRIPTS" "$(list_files '*.json')" "$(list_files '*.md')" "$(list_files '*.ps1')" \
+TEXT_FILES=$(printf '%s\n%s\n%s\n%s\n%s\n' \
+    "$SHELL_SCRIPTS" "$(list_files '*.json')" "$(list_files '*.md')" "$(list_files '*.ps1')" "$(list_files '*.js')" \
     | grep -v '^$'; echo .devcontainer/Dockerfile; echo dockerignore)
 
 # Files that assertions may grep for forbidden constructs. Excluded: the docs that quote those
