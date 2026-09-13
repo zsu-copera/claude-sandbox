@@ -230,7 +230,7 @@ was changed and no image was rebuilt for this feature.
 Recorded 2026-09-11: the initial 56 Node tests and actual WSL wrapper integration passed.
 Three additional packet-boundary cases and nine fixture-cleanup cases were then covered
 by a passing targeted run; wrapper integration was repeated after the cleanup guard changed.
-The configured suite now contains 68 tests, not a claim that all 68 ran in one invocation.
+At that point the suite contained 68 tests, not a claim that all 68 ran in one invocation.
 Integration covers two rounds, preserved originals/caches, preview/replay/refusal paths and
 the active-container guard. Cleanup retains fixture data if any surviving container still
 mounts it or mount absence cannot be established.
@@ -238,6 +238,14 @@ mounts it or mount absence cannot be established.
 Process-kill and interrupted-recovery cases are covered, not power loss or storage
 corruption. The static baseline remains 21 passed, the unresolved S7 failure, 0 warnings
 and 2 skips; no real task repository was used.
+
+2026-09-13 follow-up: a real smoke preview exposed unchanged hydrated LFS assets being
+treated as dirty when repository filters were disabled. The clean-state check now
+verifies canonical staged LFS v1 pointers against regular-file mode, byte size and
+streamed SHA-256 without invoking filters or downloading data. Targeted fixtures cover
+unchanged payloads, changed hashes/sizes, staged changes, deletion, symlinks, mode
+changes, non-LFS attributes, unsupported pointers and content-free dirty-path diagnostics.
+Real smoke packets were previewed read-only after this fix; they were not applied.
 
 ## Deliberately not asserted
 

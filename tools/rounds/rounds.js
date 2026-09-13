@@ -155,6 +155,22 @@ function parseArgs(argv) {
     return options;
 }
 
+function statusChanges(bytes) {
+    const fields = bytes.toString('utf8').split('\0');
+    const changes = [];
+    for (let i = 0; i < fields.length; i++) {
+        if (!fields[i]) continue;
+        requireThat(fields[i].length > 3 && fields[i][2] === ' ', 'Unexpected Git status record');
+        const change = { code: fields[i].slice(0, 2), path: fields[i].slice(3) };
+        if (/[RC]/.test(change.code)) {
+            requireThat(Boolean(fields[i + 1]), 'Incomplete Git rename status');
+            change.from = fields[++i];
+        }
+        changes.push(change);
+    }
+    return changes;
+}
+
 class Repository {
     constructor(root) {
         directory(root);
@@ -250,6 +266,51 @@ class Repository {
         return head;
     }
 
+    unchangedLfsPayload(change, entry) {
+        if (change.code !== ' M' || !entry) return false;
+        const attributes = this.git(['check-attr', '--cached', '-z', 'filter', '--', change.path]).toString('utf8').split('\0');
+        if (attributes[0] !== change.path || attributes[1] !== 'filter' || attributes[2] !== 'lfs') return false;
+        const size = Number(this.text(['cat-file', '-s', entry.oid]));
+        if (!Number.isSafeInteger(size) || size > 1024) return false;
+        const pointer = this.git(['cat-file', 'blob', entry.oid]).toString('utf8');
+        const match = /^version https:\/\/git-lfs.github.com\/spec\/v1\noid sha256:([0-9a-f]{64})\nsize (0|[1-9][0-9]*)\n$/.exec(pointer);
+        if (!match || match[0] !== pointer) return false;
+        const expectedSize = Number(match[2]);
+        if (!Number.isSafeInteger(expectedSize)) return false;
+        const parts = change.path.split('/');
+        if (path.isAbsolute(change.path) || parts.some(part => !part || part === '.' || part === '..')) return false;
+        let file = this.root;
+        let descriptor;
+        try {
+            for (let i = 0; i < parts.length; i++) {
+                file = path.join(file, parts[i]);
+                const stat = fs.lstatSync(file);
+                if (stat.isSymbolicLink() || (i < parts.length - 1 ? !stat.isDirectory() : !stat.isFile())) return false;
+            }
+            descriptor = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
+            const before = fs.fstatSync(descriptor);
+            if (!before.isFile() || before.size !== expectedSize || Boolean(before.mode & 0o100) !== (entry.mode === '100755')) return false;
+            // Filters remain disabled. Only canonical LFS v1 payloads whose bytes
+            // match the staged pointer are clean; extensions and changed assets fail.
+            const hash = crypto.createHash('sha256');
+            const buffer = Buffer.alloc(64 * 1024);
+            let length;
+            while ((length = fs.readSync(descriptor, buffer, 0, buffer.length, null)) > 0) {
+                hash.update(buffer.subarray(0, length));
+            }
+            const after = fs.fstatSync(descriptor);
+            const current = fs.lstatSync(file);
+            return current.isFile() && !current.isSymbolicLink()
+                && ['dev', 'ino', 'size', 'mode', 'mtimeMs', 'ctimeMs'].every(key => before[key] === after[key] && after[key] === current[key])
+                && hash.digest('hex') === match[1];
+        } catch (error) {
+            if (['ENOENT', 'ENOTDIR', 'ELOOP'].includes(error.code)) return false;
+            throw error;
+        } finally {
+            if (descriptor !== undefined) fs.closeSync(descriptor);
+        }
+    }
+
     assertClean(ignoreOwnedLocks = false) {
         const operations = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_START', 'packed-refs.lock'];
         if (!ignoreOwnedLocks) operations.push('index.lock', 'HEAD.lock');
@@ -258,8 +319,19 @@ class Repository {
         regular(path.join(this.gitDir, 'index'));
         const entries = this.git(['ls-files', '--stage', '-z']).toString('utf8').split('\0');
         requireThat(!entries.some(entry => entry.startsWith('160000 ')), 'Submodule repositories are unsupported by this importer');
+        const indexed = new Map();
+        for (const record of entries) {
+            const entry = /^(100644|100755) ([0-9a-f]+) 0\t([\s\S]+)$/.exec(record);
+            if (entry) indexed.set(entry[3], { mode: entry[1], oid: entry[2] });
+        }
         const status = this.git(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=all']);
-        requireThat(status.length === 0, 'Target has staged, unstaged or untracked changes; commit or resolve them first');
+        const dirty = statusChanges(status).filter(change => !this.unchangedLfsPayload(change, indexed.get(change.path)));
+        if (dirty.length) {
+            const summary = dirty.slice(0, 12).map(change =>
+                `  ${change.code} ${JSON.stringify(change.path)}${change.from ? ` (from ${JSON.stringify(change.from)})` : ''}`);
+            if (dirty.length > 12) summary.push(`  ... ${dirty.length - 12} more paths`);
+            throw new Error(`Target has staged, unstaged or untracked changes; commit or resolve them first:\n${summary.join('\n')}`);
+        }
     }
 
     close() {

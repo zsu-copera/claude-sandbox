@@ -109,6 +109,19 @@ resolve the existing work, then preview again. A stale preview is not authorizat
 to overwrite a newer state. Ignored build assets may remain, but non-ignored untracked
 files also need attention. Do not use a reset to bypass this check.
 
+**"Expected HEAD must be a full lowercase Git object ID."**
+Use the full `head` from a successful preview of the target repository, not a source
+commit, shortened hash or `PASTE_FULL_HEAD...` placeholder. The current QUICKSTART
+saves preview JSON and extracts that field with `jq`; a failed preview blocks apply.
+
+**Documentation's materialized LFS files appear modified without actual edits.**
+The importer deliberately does not execute repository filters. It now recognizes
+canonical LFS v1 assets as clean by comparing their size and SHA-256 with the staged
+pointer. Do not commit hydrated PDF/PowerPoint contents over their pointers or reset
+files merely to silence this symptom. If the updated importer still refuses them,
+inspect the reported paths: mismatched bytes, modes, staged changes or unsupported
+pointer forms are not waived.
+
 **Can I revise an already imported round?**
 Use a new round ID. An identical packet can be replayed without another commit,
 but different content or changes inside the existing snapshot are a conflict.

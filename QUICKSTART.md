@@ -164,7 +164,8 @@ bash "$SCAFFOLD/sandbox-round.sh" export \
 
 bash "$SCAFFOLD/sandbox-round.sh" preview \
   --workspace "$HOME/pera-sandbox" --repository Documentation \
-  --packet "$PACKETS/EPD-123-02.json"
+  --packet "$PACKETS/EPD-123-02.json" > "$PACKETS/EPD-123-02.preview.json" \
+  && jq . "$PACKETS/EPD-123-02.preview.json"
 ```
 
 Commit the external brief before export: `HEAD` selects committed contents, not the
@@ -172,13 +173,23 @@ source working tree. Additional `--path` arguments select more documents from th
 same commit. Only those files move; external code changes and unselected references
 do not come with them. Export refuses to overwrite an existing packet.
 
-Inspect the preview, then copy its full `head` into the explicit apply command:
+Stop if preview fails; do not apply. Inspect the saved preview, then run this separate
+block. It extracts the full target `head` for you, rather than using a placeholder,
+an abbreviated hash or the packet's external `sourceCommit`. Invalid/empty preview
+output stops the block before apply:
 
 ```bash
-EXPECTED_HEAD=PASTE_FULL_HEAD_FROM_PREVIEW
-bash "$SCAFFOLD/sandbox-round.sh" apply \
-  --workspace "$HOME/pera-sandbox" --repository Documentation \
-  --packet "$PACKETS/EPD-123-02.json" --expected-head "$EXPECTED_HEAD"
+(
+    set -euo pipefail
+    EXPECTED_HEAD=$(jq -ser '
+      select(length == 1) | .[0] |
+      select(.status == "ready" or .status == "already-imported") |
+      .head | strings | select(test("^[0-9a-f]{40}([0-9a-f]{24})?$"))' \
+      "$PACKETS/EPD-123-02.preview.json")
+    bash "$SCAFFOLD/sandbox-round.sh" apply \
+      --workspace "$HOME/pera-sandbox" --repository Documentation \
+      --packet "$PACKETS/EPD-123-02.json" --expected-head "$EXPECTED_HEAD"
+)
 ```
 
 Apply creates a local commit containing

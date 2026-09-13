@@ -362,6 +362,11 @@ The initial tool supports ordinary clones with `.git` directories, not linked
 worktrees, submodules or alternate object stores. It refuses dirty/non-ignored
 untracked work, ongoing Git operations, unsafe/symlinked paths, stale expected HEADs
 and conflicting round IDs. Identical repeated packets do not create another commit.
+Materialized Git LFS assets are recognized as unchanged only when their regular-file
+mode, size and SHA-256 match a canonical staged LFS v1 pointer under `filter=lfs`.
+This comparison does not run LFS filters or download anything. Modified payloads,
+staged changes and unsupported pointer forms still block import; refusals name the
+affected paths without printing their contents.
 Apply also requires an existing per-repository Git identity; it does not invent an
 author or borrow the source commit's identity. Snapshots are Git-versioned task data,
 not root-owned policy: the importer detects changed replay content, while the agent

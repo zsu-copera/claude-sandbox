@@ -93,6 +93,76 @@ for (const dirty of ['staged', 'unstaged', 'untracked', 'merge', 'cherry-pick', 
     });
 }
 
+function lfsFixture(t, options = {}) {
+    const f = fixture(t);
+    const asset = 'assets/Presentation file.pdf';
+    const payload = Buffer.from('Materialized LFS fixture\n'.repeat(5000));
+    const pointer = `version https://git-lfs.github.com/spec/v1\noid sha256:${sha256(payload)}\nsize ${payload.length}\n`;
+    write(f.target, '.gitattributes', `*.pdf filter=${options.filter || 'lfs'} diff=lfs merge=lfs -text\n`);
+    write(f.target, asset, options.pointer || pointer);
+    git(f.target, 'add', '.gitattributes', asset);
+    git(f.target, 'commit', '--quiet', '-m', 'LFS pointer fixture');
+    f.baseHead = git(f.target, 'rev-parse', 'HEAD');
+    write(f.target, asset, payload);
+    exported(f);
+    return { ...f, asset, payload, pointer };
+}
+
+test('unchanged hydrated LFS assets stay clean without executing filters', t => {
+    const f = lfsFixture(t);
+    const marker = path.join(f.base, 'lfs-filter-ran');
+    const script = write(f.base, 'lfs-filter.sh', `#!/bin/sh\nprintf ran > '${marker}'\nexit 97\n`);
+    fs.chmodSync(script, 0o755);
+    git(f.target, 'config', 'filter.lfs.process', `'${script}'`);
+    git(f.target, 'config', 'filter.lfs.clean', `'${script}'`);
+    git(f.target, 'config', 'filter.lfs.required', 'true');
+    const before = tree(f.workspace);
+    const preview = successful(invoke(f, 'preview'));
+    assert.equal(preview.status, 'ready');
+    assert.deepEqual(tree(f.workspace), before);
+    const imported = successful(invoke(f, 'apply', { head: preview.head }));
+    assert.equal(imported.status, 'imported');
+    assert.equal(successful(invoke(f, 'preview')).status, 'already-imported');
+    assert.deepEqual(fs.readFileSync(path.join(f.target, f.asset)), f.payload);
+    assert.equal(git(f.target, 'cat-file', 'blob', `HEAD:${f.asset}`), f.pointer.trim());
+    assert.ok(!fs.existsSync(marker), 'The LFS filter must never be executed.');
+});
+
+for (const change of ['hash', 'size', 'staged', 'mode', 'deleted', 'symlink', 'non-lfs-filter', 'extended-pointer']) {
+    test(`LFS does not hide ${change} changes`, t => {
+        const f = lfsFixture(t, change === 'non-lfs-filter' ? { filter: 'other' }
+            : change === 'extended-pointer' ? { pointer: 'version https://git-lfs.github.com/spec/v1\next-0-custom unsupported\n' } : {});
+        const file = path.join(f.target, f.asset);
+        if (change === 'hash') {
+            const changed = Buffer.from(f.payload);
+            changed[0] ^= 1;
+            fs.writeFileSync(file, changed);
+        } else if (change === 'size') fs.appendFileSync(file, 'changed');
+        else if (change === 'staged') git(f.target, 'add', f.asset);
+        else if (change === 'mode') fs.chmodSync(file, 0o755);
+        else if (change === 'deleted') fs.unlinkSync(file);
+        else if (change === 'symlink') {
+            fs.unlinkSync(file);
+            fs.symlinkSync(write(f.base, 'other-payload', f.payload), file);
+        }
+        const before = tree(f.workspace);
+        const message = rejected(invoke(f, 'preview'));
+        assert.ok(message.includes('assets/Presentation file.pdf'), 'The refusal must identify the dirty asset.');
+        rejected(invoke(f, 'apply', { head: f.baseHead }));
+        assert.deepEqual(tree(f.workspace), before);
+    });
+}
+
+test('dirty-path diagnostics name files without printing their contents', t => {
+    const f = fixture(t);
+    exported(f);
+    const content = 'private-working-content-not-for-diagnostics';
+    write(f.target, 'README.md', content);
+    const message = rejected(invoke(f, 'preview'));
+    assert.ok(message.includes('"README.md"'));
+    assert.ok(!message.includes(content));
+});
+
 test('strict packets reject malformed data without printing document contents', async t => {
     const f = fixture(t);
     const packet = exported(f);

@@ -77,7 +77,8 @@ else
     fi
 fi
 if [[ -v 'options[--expected-head]' ]]; then
-    [[ ${options[--expected-head]} =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] || die 'Expected HEAD must be a full lowercase Git object ID.'
+    [[ ${options[--expected-head]} =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] \
+        || die 'Expected HEAD must be a full lowercase Git object ID (40 or 64 characters), not a placeholder or abbreviated hash. For apply, use the target preview .head.'
 fi
 
 for program in podman jq flock realpath sha256sum stat dirname basename mkdir chmod ln rm id; do
