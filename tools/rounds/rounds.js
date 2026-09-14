@@ -15,8 +15,10 @@ const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 const ID = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
 const ATTRIBUTES = '* -text -filter -ident -working-tree-encoding\n**/* -text -filter -ident -working-tree-encoding\n';
 
+class ValidationError extends Error {}
+
 function requireThat(condition, message) {
-    if (!condition) throw new Error(message);
+    if (!condition) throw new ValidationError(message);
 }
 
 function sha256(bytes) {
@@ -32,7 +34,7 @@ function jsonData(bytes, label) {
         return JSON.parse(utf8(bytes));
     } catch (error) {
         if (error instanceof SyntaxError || error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA') {
-            throw new Error(`${label} is not valid UTF-8 JSON`);
+            throw new ValidationError(`${label} is not valid UTF-8 JSON`);
         }
         throw error;
     }
@@ -242,7 +244,7 @@ class Repository {
         const result = spawnSync('/usr/bin/git', args, { cwd: this.root, env, input, maxBuffer: MAX_PACKET });
         if (result.error) throw result.error;
         if (allowMissing && result.status === 1) return null;
-        requireThat(result.status === 0, `Git ${args[0]} failed (status ${result.status}); repository left for inspection`);
+        if (result.status !== 0) throw new Error(`Git ${args[0]} failed (status ${result.status}); repository left for inspection`);
         return result.stdout;
     }
 
@@ -774,30 +776,71 @@ function importPacket(repo, options) {
     }
 }
 
+function verifyRoundSnapshot(repo, manifest, roundPath, entries) {
+    const documents = manifest.documents.map(document => {
+        const entry = entries.get(`${roundPath}/files/${document.path}`);
+        requireThat(entry && entry.mode === '100644' && entry.type === 'blob', 'Round document is missing or has an unexpected mode');
+        requireThat(Number(repo.text(['cat-file', '-s', entry.oid])) <= MAX_DOCUMENT, 'Round document exceeds its size limit');
+        return { ...document, content: utf8(repo.git(['cat-file', 'blob', entry.oid])) };
+    });
+    const packet = validatePacket({ version: 1, repository: manifest.repository, task: manifest.task,
+        round: manifest.round, sourceCommit: manifest.sourceCommit, documents });
+    const digest = sha256(JSON.stringify(packet));
+    requireThat(digest === manifest.packetSha256, 'Round packet digest does not match its committed document contents');
+    const files = packetFiles(packet, digest);
+    const actual = [...entries.keys()].filter(name => name.startsWith(`${roundPath}/`));
+    requireThat(actual.length === files.size, 'Round contains missing or unexpected committed files');
+    for (const [name, bytes] of files) {
+        const entry = entries.get(`${roundPath}/${name}`);
+        const oid = crypto.createHash(repo.format).update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+        requireThat(entry && entry.mode === '100644' && entry.type === 'blob' && entry.oid === oid,
+            'Round metadata or document differs from the generated snapshot');
+    }
+    const location = safeRoundPath(repo, packet);
+    matchFiles(location.absolute, files);
+}
+
 function roundInventory(repo, head, repository) {
     const rounds = [];
-    const entries = repo.git(['ls-tree', '-r', '-z', head, '--', 'sandbox-rounds']).toString('utf8').split('\0');
-    for (const entry of entries) {
-        if (!entry) continue;
-        const match = /^([0-9]+) blob ([0-9a-f]+)\t(sandbox-rounds\/([^/]+)\/([^/]+)\/manifest\.json)$/.exec(entry);
+    const entries = new Map();
+    const records = utf8(repo.git(['ls-tree', '-r', '-z', head, '--', 'sandbox-rounds'])).split('\0').filter(Boolean);
+    for (const record of records) {
+        const entry = /^([0-9]+) (blob|commit) ([0-9a-f]+)\t([\s\S]+)$/.exec(record);
+        requireThat(entry, 'Unexpected round tree entry');
+        entries.set(entry[4], { mode: entry[1], type: entry[2], oid: entry[3] });
+    }
+    for (const [name, entry] of entries) {
+        const match = /^(sandbox-rounds\/([^/]+)\/([^/]+))\/manifest\.json$/.exec(name);
         if (!match) continue;
-        requireThat(match[1] === '100644' && ID.test(match[4]) && ID.test(match[5]), 'Unsupported round manifest path or mode');
-        requireThat(Number(repo.text(['cat-file', '-s', match[2]])) <= MAX_DOCUMENT, 'Round manifest is too large');
-        const manifest = jsonData(repo.git(['cat-file', 'blob', match[2]]), `Round manifest ${JSON.stringify(match[3])}`);
-        exactKeys(manifest, ['version', 'repository', 'task', 'round', 'sourceCommit', 'packetSha256', 'documents'], 'round manifest');
-        requireThat(manifest.version === 1 && manifest.repository === repository && manifest.task === match[4]
-            && manifest.round === match[5] && OID.test(manifest.sourceCommit)
-            && /^[0-9a-f]{64}$/.test(manifest.packetSha256)
-            && Array.isArray(manifest.documents) && manifest.documents.length > 0
-            && manifest.documents.length <= MAX_DOCUMENTS, 'Invalid committed round manifest');
-        for (const document of manifest.documents) {
-            exactKeys(document, ['path', 'blob', 'sha256'], 'manifest document');
-            documentPath(document.path);
-            requireThat(OID.test(document.blob) && /^[0-9a-f]{64}$/.test(document.sha256), 'Invalid manifest document hash');
+        requireThat(ID.test(match[2]) && ID.test(match[3]), 'Unsupported round manifest path');
+        const observed = { task: match[2], round: match[3], roundPath: match[1], packetSha256: null,
+            sourceCommit: null, documents: [], intact: false };
+        try {
+            requireThat(entry.mode === '100644' && entry.type === 'blob', 'Unsupported round manifest mode');
+            requireThat(Number(repo.text(['cat-file', '-s', entry.oid])) <= MAX_DOCUMENT, 'Round manifest is too large');
+            const manifest = jsonData(repo.git(['cat-file', 'blob', entry.oid]), `Round manifest ${JSON.stringify(name)}`);
+            exactKeys(manifest, ['version', 'repository', 'task', 'round', 'sourceCommit', 'packetSha256', 'documents'], 'round manifest');
+            requireThat(manifest.version === 1 && manifest.repository === repository && manifest.task === observed.task
+                && manifest.round === observed.round && OID.test(manifest.sourceCommit)
+                && /^[0-9a-f]{64}$/.test(manifest.packetSha256)
+                && Array.isArray(manifest.documents) && manifest.documents.length > 0
+                && manifest.documents.length <= MAX_DOCUMENTS, 'Invalid committed round manifest');
+            for (const document of manifest.documents) {
+                exactKeys(document, ['path', 'blob', 'sha256'], 'manifest document');
+                documentPath(document.path);
+                requireThat(OID.test(document.blob) && /^[0-9a-f]{64}$/.test(document.sha256), 'Invalid manifest document hash');
+            }
+            observed.packetSha256 = manifest.packetSha256;
+            observed.sourceCommit = manifest.sourceCommit;
+            observed.documents = manifest.documents;
+            verifyRoundSnapshot(repo, manifest, observed.roundPath, entries);
+            observed.intact = true;
+        } catch (error) {
+            if (!(error instanceof ValidationError) && error.code !== 'ERR_ENCODING_INVALID_ENCODED_DATA') throw error;
+            observed.integrityError = error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA'
+                ? 'Round contents are not valid UTF-8' : error.message;
         }
-        rounds.push({ task: manifest.task, round: manifest.round,
-            roundPath: `sandbox-rounds/${manifest.task}/${manifest.round}`,
-            packetSha256: manifest.packetSha256, sourceCommit: manifest.sourceCommit, documents: manifest.documents });
+        rounds.push(observed);
     }
     const checkpoints = [];
     for (const line of repo.text(['for-each-ref', '--format=%(refname) %(objectname)', 'refs/sandbox-rounds/checkpoints/']).split('\n')) {

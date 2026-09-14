@@ -112,6 +112,7 @@ test('repository inspect inventories existing committed rounds and checkpoints',
     assert.equal(result.baseHead, f.baseHead);
     assert.equal(result.rounds.length, 1);
     assert.equal(result.rounds[0].round, 'R1');
+    assert.equal(result.rounds[0].intact, true);
     assert.equal(result.rounds[0].packetSha256, applied.packetSha256);
     assert.equal(result.checkpoints[0].head, f.baseHead);
     assert.deepEqual(tree(f.workspace), before);
@@ -125,7 +126,7 @@ test('repository inspect rejects an unrelated audit baseline', t => {
     assert.deepEqual(tree(f.workspace), before);
 });
 
-test('repository inspect does not leak malformed manifest contents through JSON errors', t => {
+test('repository inspect reports malformed input integrity without leaking contents', t => {
     const f = fixture(t);
     exported(f);
     successful(invoke(f, 'apply', { head: f.baseHead }));
@@ -135,11 +136,35 @@ test('repository inspect does not leak malformed manifest contents through JSON 
     git(f.target, 'add', manifest);
     git(f.target, 'commit', '--quiet', '-m', 'Malformed input metadata');
     const before = tree(f.workspace);
-    const message = rejected(repositoryCall(f, 'inspect'));
-    assert.ok(message.includes('manifest.json'));
-    assert.ok(!message.includes(marker));
+    const result = successful(repositoryCall(f, 'inspect'));
+    assert.equal(result.status, 'clean', 'Committed corruption is separate from Git working-tree dirt.');
+    assert.equal(result.rounds[0].intact, false);
+    assert.ok(result.rounds[0].integrityError.includes('manifest.json'));
+    assert.ok(!JSON.stringify(result).includes(marker));
     assert.deepEqual(tree(f.workspace), before);
 });
+
+for (const changed of ['document', 'README.md', '.gitattributes', 'manifest.json', 'mode']) {
+    test(`repository inspect detects committed round ${changed} integrity changes`, t => {
+        const f = fixture(t);
+        exported(f);
+        successful(invoke(f, 'apply', { head: f.baseHead }));
+        const relative = changed === 'document' || changed === 'mode'
+            ? 'files/briefs/first brief.md' : changed;
+        const file = `sandbox-rounds/TASK_42/R1/${relative}`;
+        if (changed === 'mode') fs.chmodSync(path.join(f.target, file), 0o755);
+        else if (changed === 'manifest.json') fs.appendFileSync(path.join(f.target, file), '\n');
+        else write(f.target, file, 'Committed input mutation\n');
+        git(f.target, 'add', file);
+        git(f.target, 'commit', '--quiet', '-m', 'Changed retained input');
+        const before = tree(f.workspace);
+        const result = successful(repositoryCall(f, 'inspect'));
+        assert.equal(result.status, 'clean');
+        assert.equal(result.rounds[0].intact, false);
+        assert.ok(result.rounds[0].integrityError);
+        assert.deepEqual(tree(f.workspace), before);
+    });
+}
 
 test('repository collection preserves source state and reconstructs exact commits from its bundle', t => {
     const f = fixture(t);
