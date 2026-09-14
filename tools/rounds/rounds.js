@@ -27,6 +27,17 @@ function utf8(bytes) {
     return new TextDecoder('utf-8', { fatal: true, ignoreBOM: true }).decode(bytes);
 }
 
+function jsonData(bytes, label) {
+    try {
+        return JSON.parse(utf8(bytes));
+    } catch (error) {
+        if (error instanceof SyntaxError || error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA') {
+            throw new Error(`${label} is not valid UTF-8 JSON`);
+        }
+        throw error;
+    }
+}
+
 function exists(file) {
     try {
         return fs.lstatSync(file);
@@ -100,15 +111,7 @@ function validatePacket(packet) {
 
 function loadPacket(file, repository) {
     requireThat(regular(file).size <= MAX_PACKET, 'Packet exceeds the size limit');
-    let packet;
-    try {
-        packet = JSON.parse(utf8(fs.readFileSync(file)));
-    } catch (error) {
-        if (error instanceof SyntaxError || error.code === 'ERR_ENCODING_INVALID_ENCODED_DATA') {
-            throw new Error('Packet is not valid UTF-8 JSON');
-        }
-        throw error;
-    }
+    const packet = jsonData(fs.readFileSync(file), 'Packet');
     validatePacket(packet);
     requireThat(packet.repository === repository, 'Packet repository does not match the explicitly selected target');
     return { packet, digest: sha256(JSON.stringify(packet)) };
@@ -127,9 +130,9 @@ function safeMetadataTree(root, forbidLocks = false) {
 
 function parseArgs(argv) {
     const mode = argv.shift();
-    requireThat(['export', 'preview', 'apply', 'recover'].includes(mode), 'Expected export, preview, apply or recover');
+    requireThat(['export', 'preview', 'apply', 'recover', 'inspect', 'collect'].includes(mode), 'Expected export, preview, apply, recover, inspect or collect');
     const options = { mode, paths: [] };
-    const values = new Set(['root', 'state', 'repository', 'ref', 'task', 'round', 'path', 'packet', 'expected-head']);
+    const values = new Set(['root', 'state', 'repository', 'ref', 'task', 'round', 'path', 'packet', 'expected-head', 'base', 'work-base', 'output']);
     while (argv.length) {
         const flag = argv.shift();
         requireThat(flag.startsWith('--') && values.has(flag.slice(2)) && argv.length, 'Invalid or incomplete helper option');
@@ -145,10 +148,22 @@ function parseArgs(argv) {
     if (mode === 'export') {
         requireThat(options.ref && options.task && options.round
             && ID.test(options.task) && ID.test(options.round) && options.paths.length, 'Export requires a ref, task, round and selected paths');
-        requireThat(!options.state && !options.packet && !options['expected-head'], 'Unexpected export option');
+        requireThat(!options.state && !options.packet && !options['expected-head']
+            && !options.base && !options['work-base'] && !options.output, 'Unexpected export option');
+    } else if (mode === 'inspect' || mode === 'collect') {
+        requireThat(options.state && !options.packet && !options.ref && !options.task
+            && !options.round && !options.paths.length, 'Inspection/collection requires state, not brief options');
+        if (mode === 'collect') {
+            requireThat(OID.test(options.base) && OID.test(options['work-base'])
+                && OID.test(options['expected-head']) && options.output, 'Collection requires full base/work-base/expected-head IDs and an output directory');
+        } else {
+            requireThat((!options.base || OID.test(options.base)) && !options['work-base']
+                && !options['expected-head'] && !options.output, 'Unexpected inspection option');
+        }
     } else {
         requireThat(options.state && options.packet && !options.ref && !options.task
-            && !options.round && !options.paths.length, 'Import requires state and packet, not export options');
+            && !options.round && !options.paths.length && !options.base && !options['work-base']
+            && !options.output, 'Import requires state and packet, not export/collection options');
         if (mode !== 'preview') requireThat(OID.test(options['expected-head']), 'Apply/recover requires the full expected HEAD');
         else requireThat(!options['expected-head'], 'Preview does not accept an expected HEAD');
     }
@@ -311,11 +326,24 @@ class Repository {
         }
     }
 
-    assertClean(ignoreOwnedLocks = false) {
+    operationMarkers(ignoreOwnedLocks = false) {
         const operations = ['MERGE_HEAD', 'CHERRY_PICK_HEAD', 'REVERT_HEAD', 'rebase-merge', 'rebase-apply', 'sequencer', 'BISECT_START', 'packed-refs.lock'];
         if (!ignoreOwnedLocks) operations.push('index.lock', 'HEAD.lock');
-        for (const name of operations) requireThat(!exists(path.join(this.gitDir, name)), `Repository has an in-progress operation: ${name}`);
-        safeMetadataTree(path.join(this.gitDir, 'refs'), true);
+        const found = operations.filter(name => exists(path.join(this.gitDir, name)));
+        const refs = path.join(this.gitDir, 'refs');
+        safeMetadataTree(refs);
+        function visit(directory, prefix) {
+            for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+                const relative = `${prefix}/${entry.name}`;
+                if (entry.name.endsWith('.lock')) found.push(relative);
+                if (entry.isDirectory()) visit(path.join(directory, entry.name), relative);
+            }
+        }
+        visit(refs, 'refs');
+        return found;
+    }
+
+    workingChanges() {
         regular(path.join(this.gitDir, 'index'));
         const entries = this.git(['ls-files', '--stage', '-z']).toString('utf8').split('\0');
         requireThat(!entries.some(entry => entry.startsWith('160000 ')), 'Submodule repositories are unsupported by this importer');
@@ -325,7 +353,13 @@ class Repository {
             if (entry) indexed.set(entry[3], { mode: entry[1], oid: entry[2] });
         }
         const status = this.git(['status', '--porcelain=v1', '-z', '--untracked-files=all', '--ignore-submodules=all']);
-        const dirty = statusChanges(status).filter(change => !this.unchangedLfsPayload(change, indexed.get(change.path)));
+        return statusChanges(status).filter(change => !this.unchangedLfsPayload(change, indexed.get(change.path)));
+    }
+
+    assertClean(ignoreOwnedLocks = false) {
+        const operations = this.operationMarkers(ignoreOwnedLocks);
+        requireThat(operations.length === 0, `Repository has an in-progress operation: ${operations[0]}`);
+        const dirty = this.workingChanges();
         if (dirty.length) {
             const summary = dirty.slice(0, 12).map(change =>
                 `  ${change.code} ${JSON.stringify(change.path)}${change.from ? ` (from ${JSON.stringify(change.from)})` : ''}`);
@@ -740,12 +774,208 @@ function importPacket(repo, options) {
     }
 }
 
+function roundInventory(repo, head, repository) {
+    const rounds = [];
+    const entries = repo.git(['ls-tree', '-r', '-z', head, '--', 'sandbox-rounds']).toString('utf8').split('\0');
+    for (const entry of entries) {
+        if (!entry) continue;
+        const match = /^([0-9]+) blob ([0-9a-f]+)\t(sandbox-rounds\/([^/]+)\/([^/]+)\/manifest\.json)$/.exec(entry);
+        if (!match) continue;
+        requireThat(match[1] === '100644' && ID.test(match[4]) && ID.test(match[5]), 'Unsupported round manifest path or mode');
+        requireThat(Number(repo.text(['cat-file', '-s', match[2]])) <= MAX_DOCUMENT, 'Round manifest is too large');
+        const manifest = jsonData(repo.git(['cat-file', 'blob', match[2]]), `Round manifest ${JSON.stringify(match[3])}`);
+        exactKeys(manifest, ['version', 'repository', 'task', 'round', 'sourceCommit', 'packetSha256', 'documents'], 'round manifest');
+        requireThat(manifest.version === 1 && manifest.repository === repository && manifest.task === match[4]
+            && manifest.round === match[5] && OID.test(manifest.sourceCommit)
+            && /^[0-9a-f]{64}$/.test(manifest.packetSha256)
+            && Array.isArray(manifest.documents) && manifest.documents.length > 0
+            && manifest.documents.length <= MAX_DOCUMENTS, 'Invalid committed round manifest');
+        for (const document of manifest.documents) {
+            exactKeys(document, ['path', 'blob', 'sha256'], 'manifest document');
+            documentPath(document.path);
+            requireThat(OID.test(document.blob) && /^[0-9a-f]{64}$/.test(document.sha256), 'Invalid manifest document hash');
+        }
+        rounds.push({ task: manifest.task, round: manifest.round,
+            roundPath: `sandbox-rounds/${manifest.task}/${manifest.round}`,
+            packetSha256: manifest.packetSha256, sourceCommit: manifest.sourceCommit, documents: manifest.documents });
+    }
+    const checkpoints = [];
+    for (const line of repo.text(['for-each-ref', '--format=%(refname) %(objectname)', 'refs/sandbox-rounds/checkpoints/']).split('\n')) {
+        if (!line) continue;
+        const match = /^(refs\/sandbox-rounds\/checkpoints\/([^/]+)\/([^/]+)) ([0-9a-f]+)$/.exec(line);
+        requireThat(match && ID.test(match[2]) && ID.test(match[3]) && OID.test(match[4]), 'Invalid round checkpoint reference');
+        checkpoints.push({ task: match[2], round: match[3], ref: match[1], head: match[4] });
+    }
+    return { rounds, checkpoints };
+}
+
+function inspectRepository(repo, options) {
+    const state = statePaths(options.state, repo);
+    const operations = repo.operationMarkers();
+    const attached = /^ref: refs\/heads\/[^\r\n]+\n?$/.test(repo.headText);
+    const branch = attached ? repo.branch() : null;
+    if (!attached) {
+        requireThat(OID.test(repo.headText.trim()), 'Invalid detached HEAD');
+        if (!operations.length) operations.push('detached-HEAD');
+    }
+    const head = repo.head();
+    let pending = null;
+    if (exists(state.pending)) {
+        const journal = jsonData(fs.readFileSync(state.pending), 'Pending import metadata');
+        requireThat(journal.version === 2 && /^[0-9a-f]{64}$/.test(journal.packetSha256)
+            && OID.test(journal.baseHead) && (journal.commit === null || OID.test(journal.commit))
+            && typeof journal.branch === 'string' && journal.branch.startsWith('refs/heads/')
+            && /^sandbox-rounds\/[A-Za-z0-9][A-Za-z0-9_-]{0,63}\/[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(journal.roundPath)
+            && ['preparing', 'prepared', 'updating-refs', 'committed', 'rolling-back'].includes(journal.phase),
+        'Invalid pending import metadata');
+        pending = { phase: journal.phase, roundPath: journal.roundPath, packetSha256: journal.packetSha256,
+            baseHead: journal.baseHead, commit: journal.commit, branch: journal.branch };
+    }
+    const observedWorktree = !pending && operations.length === 0;
+    if (options.base && observedWorktree) {
+        requireThat(repo.text(['rev-parse', '--verify', `${options.base}^{commit}`]) === options.base, 'Inspection base must identify a commit');
+        repo.git(['merge-base', '--is-ancestor', options.base, head]);
+    }
+    const changes = pending || operations.length ? null : repo.workingChanges();
+    const inventory = observedWorktree ? roundInventory(repo, head, options.repository) : { rounds: [], checkpoints: [] };
+    requireThat(fs.readFileSync(path.join(repo.gitDir, 'HEAD'), 'utf8') === repo.headText
+        && repo.head() === head, 'HEAD changed during inspection');
+    return { status: pending ? 'recovery-required' : operations.length ? 'busy' : changes.length ? 'dirty' : 'clean',
+        repository: options.repository, head, branch, changes, operations, pending, observedWorktree, ...inventory,
+        ...(options.base && observedWorktree ? { baseHead: options.base } : {}) };
+}
+
+function digestFile(file) {
+    regular(file);
+    const descriptor = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    try {
+        const hash = crypto.createHash('sha256');
+        const buffer = Buffer.alloc(64 * 1024);
+        let length;
+        let bytes = 0;
+        while ((length = fs.readSync(descriptor, buffer, 0, buffer.length, null)) > 0) {
+            hash.update(buffer.subarray(0, length));
+            bytes += length;
+        }
+        return { sha256: hash.digest('hex'), bytes };
+    } finally {
+        fs.closeSync(descriptor);
+    }
+}
+
+function collectionLfsBlockers(repo, base, head) {
+    const records = utf8(repo.git(['diff-tree', '--no-ext-diff', '--no-textconv', '--no-commit-id',
+        '--raw', '--no-abbrev', '--no-renames', '-r', '-z', base, head])).split('\0');
+    const blockers = [];
+    for (let i = 0; i < records.length; i += 2) {
+        if (!records[i]) continue;
+        const match = /^:([0-9]+) ([0-9]+) ([0-9a-f]+) ([0-9a-f]+) ([A-Z])$/.exec(records[i]);
+        requireThat(match && records[i + 1], 'Unexpected collection diff record');
+        const name = records[i + 1];
+        if (match[5] === 'D') continue;
+        const oid = match[4];
+        const size = Number(repo.text(['cat-file', '-s', oid]));
+        if (!Number.isSafeInteger(size)) throw new Error('Invalid changed object size');
+        if (name === '.gitattributes' || name.endsWith('/.gitattributes')) {
+            if (size > MAX_DOCUMENT) blockers.push(name);
+            else if (/\bfilter\s*=\s*lfs\b/.test(repo.git(['cat-file', 'blob', oid]).toString('utf8'))) blockers.push(name);
+        }
+        if (size > 1024) continue;
+        const bytes = repo.git(['cat-file', 'blob', oid]).toString('utf8');
+        if (!bytes.startsWith('version https://git-lfs.github.com/spec/v1\n')) continue;
+        const attributes = repo.git(['check-attr', '--cached', '-z', 'filter', '--', name]).toString('utf8').split('\0');
+        if (attributes[2] === 'lfs') blockers.push(name);
+    }
+    return [...new Set(blockers)];
+}
+
+function bundledLfsPointers(repo, base, head) {
+    const objects = repo.text(['rev-list', '--objects', '--no-object-names', head, `^${base}`]).split('\n').filter(Boolean);
+    requireThat(objects.every(oid => OID.test(oid)), 'Unexpected bundle object identity');
+    const pointers = [];
+    // A bundle contains intermediate commits too, even when their endpoint diff
+    // is empty. Inspect new small blobs, not only files still present at HEAD.
+    for (let start = 0; start < objects.length; start += 128) {
+        const batch = objects.slice(start, start + 128);
+        const records = repo.text(['cat-file', '--batch-check'], `${batch.join('\n')}\n`).split('\n');
+        requireThat(records.length === batch.length, 'Incomplete bundle object inventory');
+        for (let i = 0; i < records.length; i++) {
+            const match = /^([0-9a-f]+) (blob|tree|commit|tag) ([0-9]+)$/.exec(records[i]);
+            requireThat(match && match[1] === batch[i], 'Invalid bundle object inventory');
+            const size = Number(match[3]);
+            requireThat(Number.isSafeInteger(size), 'Invalid bundle object size');
+            if (match[2] !== 'blob' || size > 1024) continue;
+            const content = repo.git(['cat-file', 'blob', match[1]]).toString('utf8');
+            if (content.startsWith('version https://git-lfs.github.com/spec/v1\n')) pointers.push(match[1]);
+        }
+    }
+    return pointers;
+}
+
+function collectRepository(repo, options) {
+    const state = statePaths(options.state, repo);
+    requireThat(!exists(state.pending), 'Resolve the pending import before collection');
+    repo.assertClean();
+    const branch = repo.branch();
+    const head = repo.head();
+    assertCurrent(repo, options['expected-head']);
+    const indexHash = sha256(fs.readFileSync(path.join(repo.gitDir, 'index')));
+    const base = options.base;
+    const workBase = options['work-base'];
+    for (const ancestor of new Set([base, workBase])) {
+        requireThat(repo.text(['rev-parse', '--verify', `${ancestor}^{commit}`]) === ancestor, 'Collection base must identify a commit');
+        repo.git(['merge-base', '--is-ancestor', ancestor, head]);
+    }
+    const output = path.resolve(options.output);
+    directory(path.dirname(output));
+    requireThat(path.join(fs.realpathSync(path.dirname(output)), path.basename(output)) === output, 'Symlinked collection parent is unsupported');
+    requireThat(!inside(repo.root, output) && !inside(output, repo.root)
+        && !inside(state.root, output) && !inside(output, state.root), 'Collection output must not overlap repository or recovery state');
+    if (exists(output)) {
+        directory(output);
+        requireThat(fs.readdirSync(output).length === 0, 'Collection output must be empty');
+    }
+    const blockers = [...new Set([...collectionLfsBlockers(repo, base, head), ...collectionLfsBlockers(repo, workBase, head)])];
+    requireThat(blockers.length === 0, `Collection needs explicit LFS artifact handling; no complete package was produced: ${blockers.map(name => JSON.stringify(name)).join(', ')}`);
+    const historyPointers = bundledLfsPointers(repo, base, head);
+    requireThat(historyPointers.length === 0, `Collection needs explicit LFS artifact handling for bundled history; new pointer objects: ${historyPointers.slice(0, 12).join(', ')}${historyPointers.length > 12 ? ' (more omitted)' : ''}`);
+    const changedPaths = utf8(repo.git(['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--name-only', '-z', base, head]))
+        .split('\0').filter(Boolean);
+    if (!exists(output)) fs.mkdirSync(output, { mode: 0o700 });
+    const files = [];
+    for (const [name, from] of [['changes.patch', base], ['work.patch', workBase]]) {
+        const bytes = repo.git(['diff', '--no-ext-diff', '--no-textconv', '--no-renames', '--no-color', '--binary', from, head, '--']);
+        fs.writeFileSync(path.join(output, name), bytes, { flag: 'wx', mode: 0o600 });
+        files.push({ name, ...digestFile(path.join(output, name)) });
+    }
+    if (base !== head) {
+        // Advertise a fixed private HEAD, not the mutable workspace branch.
+        fs.writeFileSync(path.join(repo.control, 'HEAD'), `${head}\n`);
+        repo.git(['bundle', 'create', path.join(output, 'history.bundle'), 'HEAD', `^${base}`]);
+        fs.chmodSync(path.join(output, 'history.bundle'), 0o600);
+        repo.git(['bundle', 'verify', path.join(output, 'history.bundle')]);
+        files.push({ name: 'history.bundle', ...digestFile(path.join(output, 'history.bundle')) });
+    }
+    repo.branch();
+    requireThat(repo.text(['rev-parse', '--verify', `${branch}^{commit}`]) === head, 'Workspace HEAD changed during collection');
+    requireThat(sha256(fs.readFileSync(path.join(repo.gitDir, 'index'))) === indexHash, 'Workspace index changed during collection');
+    repo.assertClean();
+    const manifest = { version: 1, repository: options.repository, status: base === head ? 'unchanged' : 'collected',
+        head, branch, baseHead: base, workBaseHead: workBase, files, changedPaths,
+        inputPaths: changedPaths.filter(name => name.startsWith('sandbox-rounds/')) };
+    fs.writeFileSync(path.join(output, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`, { flag: 'wx', mode: 0o600 });
+    return manifest;
+}
+
 function main(argv) {
     requireThat(process.platform === 'linux', 'Run the helper inside the maintenance container');
     const options = parseArgs([...argv]);
     const repo = new Repository(options.root);
     try {
-        return options.mode === 'export' ? exportPacket(repo, options) : importPacket(repo, options);
+        if (options.mode === 'export') return exportPacket(repo, options);
+        if (options.mode === 'inspect') return inspectRepository(repo, options);
+        if (options.mode === 'collect') return collectRepository(repo, options);
+        return importPacket(repo, options);
     } finally {
         repo.close();
     }

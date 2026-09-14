@@ -11,6 +11,11 @@ Usage:
   bash sandbox-round.sh preview|apply|recover [--workspace WORKSPACE]
     --repository prj|Documentation --packet PACKET [--expected-head SHA]
     [--image IMAGE]
+  bash sandbox-round.sh inspect [--workspace WORKSPACE]
+    --repository prj|Documentation [--base SHA] [--image IMAGE]
+  bash sandbox-round.sh collect [--workspace WORKSPACE]
+    --repository prj|Documentation --base SHA --work-base SHA
+    --expected-head SHA --output NEW_DIRECTORY [--image IMAGE]
 
 Defaults: workspace $HOME/pera-sandbox; image localhost/pera-sandbox.
 Apply requires the full --expected-head from the reviewed preview; recover uses
@@ -23,6 +28,9 @@ Packets must be outside the workspace. Only ordinary .git directories are suppor
 The image must already exist: no pulls, rebuilds, preparation or network access.
 Stop containers using this workspace before intake; other manual edits must also
 remain stopped. The workspace lock coordinates this wrapper, not arbitrary tools.
+Inspect reports known running containers without reading a live worktree. Collect
+exports clean committed work read-only; it never pushes, merges or changes a repo.
+Changed LFS pointers/attributes require separate artifact handling and block collect.
 
 Windows: invoke this Bash entrypoint with wsl -d centos-9 -- bash SCRIPT ...
 USAGE
@@ -33,7 +41,7 @@ if [[ $# == 1 && ( $1 == --help || $1 == -h ) ]]; then usage; exit 0; fi
 [[ $# -gt 0 ]] || { usage >&2; exit 2; }
 mode=$1
 shift
-case "$mode" in export|preview|apply|recover) ;; *) die 'Expected export, preview, apply or recover (or --help).';; esac
+case "$mode" in export|preview|apply|recover|inspect|collect) ;; *) die 'Expected export, preview, apply, recover, inspect or collect (or --help).';; esac
 if [[ $# == 1 && ( $1 == --help || $1 == -h ) ]]; then usage; exit 0; fi
 
 declare -A options=()
@@ -42,7 +50,7 @@ while [[ $# -gt 0 ]]; do
     flag=$1
     shift
     case "$flag" in
-        --source|--repository|--ref|--task|--round|--path|--output|--image|--workspace|--packet|--expected-head) ;;
+        --source|--repository|--ref|--task|--round|--path|--output|--image|--workspace|--packet|--expected-head|--base|--work-base) ;;
         *) die "Unknown argument: $flag";;
     esac
     [[ $# -gt 0 && -n $1 && $1 != --* ]] || die "Missing value for $flag."
@@ -61,27 +69,43 @@ if [[ $mode == export ]]; then
         [[ -v "options[$flag]" ]] || die "Export requires $flag."
     done
     [[ ${#paths[@]} -gt 0 ]] || die 'Export requires at least one --path.'
-    for flag in --workspace --packet --expected-head; do
+    for flag in --workspace --packet --expected-head --base --work-base; do
         [[ ! -v "options[$flag]" ]] || die "$flag is not valid for export."
     done
 else
-    [[ -v 'options[--packet]' ]] || die 'Import requires --packet.'
     [[ ${#paths[@]} == 0 ]] || die '--path is only valid for export.'
-    for flag in --source --ref --task --round --output; do
+    for flag in --source --ref --task --round; do
         [[ ! -v "options[$flag]" ]] || die "$flag is only valid for export."
     done
-    if [[ $mode != preview ]]; then
-        [[ -v 'options[--expected-head]' ]] || die 'Apply/recover requires --expected-head.'
+    if [[ $mode == collect ]]; then
+        [[ ! -v 'options[--packet]' ]] || die 'Collect does not accept --packet.'
+        for flag in --base --work-base --expected-head --output; do
+            [[ -v "options[$flag]" ]] || die "Collect requires $flag."
+        done
+    elif [[ $mode == inspect ]]; then
+        for flag in --packet --expected-head --work-base --output; do
+            [[ ! -v "options[$flag]" ]] || die "$flag is not valid for inspect."
+        done
     else
-        [[ ! -v 'options[--expected-head]' ]] || die 'Preview does not accept --expected-head.'
+        [[ -v 'options[--packet]' ]] || die 'Import requires --packet.'
+        for flag in --base --work-base --output; do
+            [[ ! -v "options[$flag]" ]] || die "$flag is not valid for import."
+        done
+        if [[ $mode != preview ]]; then
+            [[ -v 'options[--expected-head]' ]] || die 'Apply/recover requires --expected-head.'
+        else
+            [[ ! -v 'options[--expected-head]' ]] || die 'Preview does not accept --expected-head.'
+        fi
     fi
 fi
-if [[ -v 'options[--expected-head]' ]]; then
-    [[ ${options[--expected-head]} =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] \
-        || die 'Expected HEAD must be a full lowercase Git object ID (40 or 64 characters), not a placeholder or abbreviated hash. For apply, use the target preview .head.'
-fi
+for flag in --expected-head --base --work-base; do
+    if [[ -v "options[$flag]" ]]; then
+        [[ ${options[$flag]} =~ ^([0-9a-f]{40}|[0-9a-f]{64})$ ]] \
+            || die "$flag must be a full lowercase Git object ID (40 or 64 characters), not a placeholder or abbreviated hash."
+    fi
+done
 
-for program in podman jq flock realpath sha256sum stat dirname basename mkdir chmod ln rm id; do
+for program in podman jq flock realpath sha256sum stat dirname basename mkdir chmod ln rm mv id; do
     command -v "$program" >/dev/null 2>&1 || die "Required WSL command is missing: $program"
 done
 [[ $(id -u) != 0 ]] || die 'Run this wrapper as the normal rootless container user.'
@@ -120,6 +144,7 @@ IFS= read -r nonce < /proc/sys/kernel/random/uuid
 [[ $nonce =~ ^[a-f0-9-]{36}$ ]] || die 'Cannot allocate an operation identifier.'
 container_name="pera-round-$nonce"
 partial=
+collection_partial=
 container_attempted=0
 cleanup() {
     local status=$? label probe_status cleanup_failed=0
@@ -145,6 +170,13 @@ cleanup() {
         fi
     fi
     if [[ -n $partial ]] && ! rm -f -- "$partial"; then cleanup_failed=1; fi
+    if [[ -n $collection_partial ]]; then
+        if [[ $cleanup_failed == 0 ]]; then
+            if ! rm -rf -- "$collection_partial"; then cleanup_failed=1; fi
+        else
+            printf 'sandbox-round: collection staging retained for inspection: %s\n' "$collection_partial" >&2
+        fi
+    fi
     if [[ $cleanup_failed == 1 && $status == 0 ]]; then status=1; fi
     exit "$status"
 }
@@ -198,14 +230,26 @@ fi
 [[ -d $workspace ]] || die 'Retained workspace does not exist.'
 target=$(resolve "$workspace/$repository")
 [[ -d $target && -d $target/.git && ! -L $target/.git ]] || die 'Selected target requires an ordinary .git directory.'
-packet=$(resolve "${options[--packet]}")
-[[ -f $packet && ! -L $packet ]] || die 'Packet must be a regular file.'
-! inside "$workspace" "$packet" || die 'Packet must be outside the retained workspace.'
-[[ $packet != "$core" ]] || die 'Packet cannot be the trusted helper.'
+packet=
+if [[ $mode != inspect && $mode != collect ]]; then
+    packet=$(resolve "${options[--packet]}")
+    [[ -f $packet && ! -L $packet ]] || die 'Packet must be a regular file.'
+    ! inside "$workspace" "$packet" || die 'Packet must be outside the retained workspace.'
+    [[ $packet != "$core" ]] || die 'Packet cannot be the trusted helper.'
+fi
 state_base=$(resolve "${XDG_STATE_HOME:-$HOME/.local/state}/pera-sandbox-rounds")
 ! overlaps "$state_base" "$workspace" || die 'State must be outside the workspace.'
-! overlaps "$state_base" "$packet" || die 'State must not overlap the packet.'
+if [[ -n $packet ]]; then
+    ! overlaps "$state_base" "$packet" || die 'State must not overlap the packet.'
+fi
 ! overlaps "$state_base" "$scaffold" || die 'State must be outside the trusted scaffold.'
+if [[ $mode == collect ]]; then
+    output=$(resolve "${options[--output]}")
+    [[ -d $(dirname -- "$output") && ! -e $output && ! -L $output ]] || die 'Collect requires a new directory with an existing parent.'
+    for protected in "$workspace" "$scaffold" "$state_base"; do
+        ! overlaps "$protected" "$output" || die 'Collection output overlaps protected data.'
+    done
+fi
 
 private_directory() {
     local directory=$1
@@ -239,10 +283,43 @@ if [[ -n $running ]]; then
         <<< "$metadata" >/dev/null || die 'Unexpected container mount metadata.'
     while IFS= read -r -d '' mounted; do
         mounted=$(realpath -m -- "$mounted") || die 'Cannot resolve an active container mount.'
-        ! overlaps "$workspace" "$mounted" || die 'A running container mounts this workspace. Stop it before intake.'
+        if overlaps "$workspace" "$mounted"; then
+            if [[ $mode == inspect ]]; then
+                jq -n --arg repository "$repository" --arg mount "$mounted" \
+                    '{status:"running",repository:$repository,observedWorktree:false,containers:[{mount:$mount}]}'
+                exit 0
+            fi
+            die 'A running container mounts this workspace. Stop it before intake or collection.'
+        fi
     done < <(jq -j '.[] | .Mounts[] | select(.Type == "bind") | .Source, "\u0000"' <<< "$metadata")
 fi
 
+if [[ $mode == inspect ]]; then
+    args=(inspect --root /repo --state /state --repository "$repository")
+    [[ ! -v 'options[--base]' ]] || args+=(--base "${options[--base]}")
+    container_attempted=1
+    "${container[@]}" --mount "type=bind,src=$target,dst=/repo,ro" \
+        --mount "type=bind,src=$state,dst=/state,ro" "$image" -c "$bootstrap" \
+        rounds /opt/rounds.js "${args[@]}"
+    exit 0
+fi
+if [[ $mode == collect ]]; then
+    candidate="$output.stage-$nonce"
+    mkdir -m 700 -- "$candidate"
+    collection_partial=$candidate
+    container_attempted=1
+    "${container[@]}" --mount "type=bind,src=$target,dst=/repo,ro" \
+        --mount "type=bind,src=$state,dst=/state,ro" \
+        --mount "type=bind,src=$collection_partial,dst=/out,rw" \
+        "$image" -c "$bootstrap" rounds /opt/rounds.js collect --root /repo --state /state \
+        --repository "$repository" --base "${options[--base]}" --work-base "${options[--work-base]}" \
+        --expected-head "${options[--expected-head]}" --output /out >/dev/null
+    mv --no-clobber --no-target-directory -- "$collection_partial" "$output"
+    [[ ! -e $collection_partial ]] || die 'Collection destination appeared; existing output was not replaced.'
+    collection_partial=
+    jq . "$output/manifest.json"
+    exit 0
+fi
 access=rw
 [[ $mode != preview ]] || access=ro
 args=("$mode" --root /repo --state /state --repository "$repository" --packet /input/packet.json)
