@@ -97,6 +97,10 @@ with the existing warmed workspace. Moving to a different code baseline is a sep
 integration decision, not an automatic side effect of importing instructions.
 
 **How do I bring in external review findings without losing the agent's work?**
+For the normal workflow, ask the outside agent to use `OPERATOR.md` and the registered
+task's `send` command. It prepares one plan, explains the inputs/destinations and
+applies that exact plan after your chat approval.
+
 Commit the selected brief documents outside the sandbox, export a packet, preview it,
 then apply it with the previewed target HEAD while the agent is stopped.
 `sandbox-round.sh` adds a new round directory and local commit; it does not merge the
@@ -134,6 +138,30 @@ The exporter reads the selected source repo read-only. The separate importer rec
 only the packet, selected target repo, trusted helper and private recovery state.
 Both run with networking disabled and no elevated capabilities. The source working
 copy is never mounted into the importer, and repository hooks/filters are not executed.
+
+**Does task registration clone or warm another workspace?**
+No. It records an existing workspace, source branches, image and explicit audit bases.
+It does not switch branches or prepare dependencies. The outside agent should confirm
+those facts once, then use the task ID for subsequent handoffs.
+
+**Can the outside agent apply a different brief after a plan was approved?**
+No. The plan binds the selected committed inputs, packets and target state. A change
+requires a matching new plan/approval rather than silently refreshing captured values.
+Partial progress across the two repos stays visible; it does not justify a reset.
+
+**Why does an unchanged brief or completed plan now report an integrity problem?**
+Stored delivery receipts are not proof that the inputs remain present. The controller
+checks the current retained snapshots and checkpoints against the approved packets.
+Missing or modified inputs block both a new no-op send and a completed-plan replay.
+Ordinary later committed work is allowed, but it must preserve the recorded execution
+ancestry and input history. Do not reset or recreate evidence to clear the warning;
+collect the committed changes for audit where the normal collection requirements hold.
+
+**What does collection do to my host repositories?**
+Nothing automatically. It creates a local, unreviewed audit package from the stopped
+sandbox's committed work. It does not check out, merge or push that work into the
+external source repos. Dirty work or unsupported LFS artifacts must be addressed
+explicitly rather than silently omitted.
 
 **An import was interrupted. Should I delete its Git locks?**
 No. Use the tool's `recover` operation with the original packet and current expected

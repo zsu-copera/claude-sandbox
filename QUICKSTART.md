@@ -140,6 +140,19 @@ Read [README §4b](README.md#4b-github-copilot-cli-variant) before unattended us
 
 ## Continue a task through review rounds
 
+**Preferred: let the outside agent operate the handoff.** Point it to
+`C:\work\pera\claude-sandbox\OPERATOR.md`, then ask it to register the existing task,
+prepare the next committed brief for sending, or collect completed work for audit.
+It will remember the workspace/source mappings and present one plan for approval.
+You do not need to copy expected HEADs, manage packet filenames or run a new prepare.
+
+The task-aware commands are `register`, `send`, `status` and `collect` in
+`sandbox-task.sh`. Initial assembly/prepare and the existing guarded agent launch
+remain separate. Attaching in-progress work requires an explicit audit baseline;
+registration must not hide existing changes by assuming the latest HEAD is the start.
+
+The following low-level sequence is retained for manual diagnosis and recovery:
+
 Assemble and warm once for the task. For each subsequent brief or external review,
 keep the same workspace: **export committed documents -> preview -> apply -> run
 the agent -> review/harvest**. Stop the agent and other users of that workspace

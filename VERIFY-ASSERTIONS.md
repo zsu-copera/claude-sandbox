@@ -16,6 +16,7 @@ assertions are impossible in the wrong context.
 | `verify-scaffold.sh` | (none) | Windows host, Git Bash or WSL, against this directory | seconds, no container |
 | `verify-firewall.sh` | default / `--callers-only` / `--sudo-only` | WSL/Podman, disposable containers with candidate source | targeted modes are quicker; full suite takes minutes |
 | `verify-rounds.sh` | default | WSL/Podman, disposable repositories and operator-command fixtures | no prepare or real task workspace |
+| `verify-tasks.sh` | default / integration mode | Disposable task registry, send/status and audit-collection fixtures | no real task registration or export |
 | `verify-sandbox.sh` | `--post-prepare` | End of `prepare.sh`, network still open | seconds |
 | `verify-sandbox.sh` | `--pre-agent` | In `run-agent`/`run-copilot` after lockdown, **still holding capabilities** | seconds |
 | `verify-sandbox.sh` | `--as-agent` | Invoked *through* the `setpriv` wrapper, i.e. with the agent's own privileges | seconds |
@@ -246,6 +247,92 @@ streamed SHA-256 without invoking filters or downloading data. Targeted fixtures
 unchanged payloads, changed hashes/sizes, staged changes, deletion, symlinks, mode
 changes, non-LFS attributes, unsupported pointers and content-free dirty-path diagnostics.
 Real smoke packets were previewed read-only after this fix; they were not applied.
+
+### Retained-workspace smoke outcome
+
+The user subsequently completed the two-round smoke trial on 2026-09-13:
+
+| Repository | R1 import | R2 import |
+|---|---|---|
+| `prj` | `d4139f30070be96b14cb4c9056fd069043a388ff` | `c1f7b73da002bf9a3d4f19256372836d759894b3` |
+| `Documentation` | `a221b8469538e1684e34a0b69b3a8feb3853b599` | `cd972c5857d878083cbb22467ad8f9be97bf4144` |
+
+R2 was a direct child of R1 in each repository, added only its snapshot files and
+left the R1 trees unchanged. Both R2 previews recognized the existing imports and
+neither repository had a pending recovery journal. The saved post-R2 fingerprints
+and a fresh read-only comparison matched all four pre-import cache samples.
+This was a brief-import/cache-preservation trial, not an application build or
+model/reviewer orchestration test.
+
+## Outside-agent task operations (`verify-tasks.sh`)
+
+The task-controller contract builds on the existing round assertions rather than
+replacing their safety gates. Its fixture coverage must include:
+
+- Strict registration, explicit ancestor audit bases, private state outside the
+  workspace, stable branch/image identity and noncolliding round IDs.
+- Committed selected inputs only, unchanged-brief no-ops, immutable plan IDs and
+  packet/configuration/HEAD checks before an explicitly approved apply.
+- Visible partial two-repo progress, matching recovery/retry, and no duplicate
+  commits or implicit resets when one side already succeeded.
+- Current retained-delivery integrity for no-op sends and completed-plan replay,
+  including unchanged repositories in a mixed send. Historical receipts alone must
+  not conceal deleted, changed or self-consistently forged input snapshots.
+- Completed replay after legitimate later committed work, while refusing dirty,
+  running, foreign-recovery, branch-switched or rewritten execution history.
+- Structured clean/dirty/busy/running/recovery status without executing repository
+  hooks/filters or treating stale recorded state as a live observation.
+- Read-only collection with both full and focused diff bases, bundle reconstruction,
+  checksummed package publication and baseline advancement only after complete export.
+- Explicit handling of missing/unsupported LFS artifacts and visibility of edits to
+  input snapshots, rather than successful-looking incomplete audit packages.
+  Include temporary/reverted LFS changes in bundled history, not just endpoint diffs.
+- Busy inspection of real conflicted rebases/detached HEAD without treating it as
+  clean state, inventing an attached branch or claiming an unvalidated audit base.
+
+`tests/tasks/repository.test.js` exercises the low-level `inspect`/`collect` additions
+using disposable repositories. Existing round modes retain their own tests. No task
+controller result establishes correctness of an application's code, validates a
+profile's complete dependency cache or authorizes unattended model execution.
+
+Run the combined suite from an ordinary WSL directory outside the scaffold and
+retained workspaces:
+
+```bash
+cd "$HOME"
+bash /mnt/c/work/pera/claude-sandbox/verify-tasks.sh --integration
+```
+
+The integration mode creates only uniquely named fixture directories/containers.
+It exercises registration, chat-plan/apply separation, selected-source refs,
+unchanged-input no-ops, paired and single-repo sends, audit collection, dirty/running
+guards and an intentionally interrupted host wrapper. The orphan controller must
+retain exclusive ownership of task state until its labelled container stops.
+Missing engine/mount certainty retains fixture data rather than deleting it.
+
+Recorded 2026-09-14: 44 Node cases passed, followed by the actual WSL task-wrapper
+scenario and orphan-controller lock scenario. Code-source hashes stayed stable
+through the run. These were disposable fixtures; no live task was registered,
+sent, collected or launched, and no image was rebuilt.
+
+Follow-up review tightened no-op/current-validity handling. Low-level inventory now
+reconstructs each committed round packet and verifies its generated tree and working
+snapshot, reporting `intact` separately from Git dirt. Controller checks bind those
+observations to private approved plans and checkpoints. Malformed committed input
+metadata remains visible and collectable for audit; it is not silently approved for
+another handoff. Additional targeted cases cover these distinctions and task-scoped
+prior entrypoints.
+
+The follow-up retained/recovery/inspection selector passed 30 cases, and the collection
+selector passed its four relevant cases. The real WSL wrapper scenario was rerun with
+later-work replay and committed-input tampering: valid replay succeeded, while unchanged
+sends and completed-plan replay refused the altered input without changing it.
+The configured Node suite now has 63 cases; the recorded coverage combines the initial
+full run and targeted additions rather than claiming a single 63-case invocation.
+
+Implementation commits: `9786e80` (repository inspection/collection) and `0fb50c7`
+(task controller and retained-delivery safeguards), on `feat/sandbox-task-operator`.
+No real workspace was registered, sent or collected during this implementation.
 
 ## Deliberately not asserted
 

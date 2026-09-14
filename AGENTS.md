@@ -50,8 +50,9 @@ procedure, `FAQ.md` for troubleshooting. Do not duplicate their content here.
   `New-Sandbox.ps1` is unsupported drift, not the supported assembly path.
 - **This directory is its own git repository** (standalone, default branch `main`, no remote
   yet — see Promotion). Inspect the current branch before working; E1 is being maintained
-  on `fix/e1-firewall-transitions`, and round intake on `feat/sandbox-round-imports`,
-  separately from `main`. Commit as you go, in small
+  on `fix/e1-firewall-transitions`, round intake on `feat/sandbox-round-imports`, and
+  outside-agent task operations on `feat/sandbox-task-operator`, separately from `main`.
+  Commit as you go, in small
   reviewable steps; a change that cannot be described in
   one line is usually two changes. `git diff` is the review surface, so leave the tree clean
   when you stop.
@@ -138,7 +139,13 @@ does not update its baked image copy; packaging and real-session rollout are sep
 
 ## Persistent task rounds
 
-Use `sandbox-round.sh` from this trusted scaffold for operator-controlled brief intake.
+**The outside agent is the default operator.** Read `OPERATOR.md` when asked to
+register a task, send a brief, inspect handoff status or collect work for audit.
+Use the task-aware controller and present one concise approval summary; do not hand
+the user a chain of shell variables or hashes to copy.
+
+Use `sandbox-task.sh` for the normal workflow and `sandbox-round.sh` from this trusted
+scaffold for low-level diagnosis and operator-controlled brief intake.
 It exports explicitly selected committed documents and imports append-only snapshots,
 not external branches, into an existing warmed task repository. Do not reset, re-clone,
 rewarm, stash changes or overwrite canonical instructions merely to advance a review round.
@@ -148,6 +155,10 @@ are visible to the agent. Read QUICKSTART for the command sequence and recovery 
 Keep import containers network-disabled and unprivileged, with only the selected repo
 and private recovery state writable. Do not replace this with host Git operations that
 can execute hooks or filters from agent-controlled repository configuration.
+Task definitions and approval plans belong in private operator state, never in the
+agent workspace. Do not infer an audit baseline from the currently checked-out host
+branch, automatically merge collected work, or treat a partial two-repo operation
+as complete. Registration and collection do not authorize a real task run.
 
 ## Promotion, and an open decision
 

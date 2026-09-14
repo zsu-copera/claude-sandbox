@@ -80,6 +80,11 @@ the workspace, merge an outside branch or invoke prepare. The agent then reads
 `sandbox-rounds/<task>/<round>/README.md` in the selected repository.
 See [the round workflow](QUICKSTART.md#continue-a-task-through-review-rounds).
 
+The preferred operator is now the **outside agent**, using task registration,
+`send`, `status` and `collect` rather than asking a person to manage packets and
+expected HEADs. See [OPERATOR.md](OPERATOR.md). The low-level commands remain available
+for diagnostics and recovery; the guarded agent launch is unchanged.
+
 ## Usage
 
 ### 1. Assemble the sandbox (from Windows)
@@ -336,6 +341,9 @@ VS Code option: install the Dev Containers extension, set `dev.containers.docker
 | `VERIFY-ASSERTIONS.md` | Implemented checks, planned lifecycle assertions and coverage limits |
 | `sandbox-round.sh`, `tools/rounds/rounds.js` | Operator-only export/preview/apply/recover for append-only committed brief snapshots |
 | `verify-rounds.sh`, `tests/rounds/` | Disposable round-import and recovery regressions |
+| `sandbox-task.sh`, `tools/tasks/` | Registered outside-agent task plans, handoffs, status and audit collection |
+| `OPERATOR.md` | Outside-agent procedure, approval rules and audit boundaries |
+| `verify-tasks.sh`, `tests/tasks/` | Disposable task-controller and read-only collection coverage |
 
 ## Review-round import boundary
 
