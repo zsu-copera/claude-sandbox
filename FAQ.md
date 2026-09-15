@@ -144,6 +144,36 @@ No. It records an existing workspace, source branches, image and explicit audit 
 It does not switch branches or prepare dependencies. The outside agent should confirm
 those facts once, then use the task ID for subsequent handoffs.
 
+**The new brief arrived, but its referenced file is missing or old. Why?**
+Only selected committed documents move, and they arrive under
+`sandbox-rounds/<task>/<round>/files/<original-path>`. The importer does not refresh
+canonical copies, follow every link, or include files from other source branches.
+Ask the outside agent to inventory required context and provide an explicit
+[snapshot path map](OPERATOR.md#bridge-cited-paths-in-the-launch-handoff).
+Stop for missing required context rather than assuming a relative link is usable.
+
+**Does a ready status mean the README and implementation log match the host?**
+No. Retained-input integrity and canonical-document freshness are different.
+Current `status`/`send` do not detect drift in unselected shared documents.
+If the sandbox will update them, include needed host snapshots and explicitly
+decide how to preserve both sides' changes, or leave those documents host-owned.
+Importing a current snapshot is not automatic synchronization of the editable file.
+See [context and ownership](OPERATOR.md#select-context-and-assign-document-ownership).
+
+**Can a measurement script accompany a brief?**
+Not as an `.mjs` attachment under the current document-only contract. A reviewed,
+verbatim fenced block in committed Markdown can carry a script with its source
+identity, SHA-256 and precise scratch-file extraction instructions. Compare the
+extracted bytes before separately authorized execution; provenance is not permission.
+Binary attachment transport remains unsupported. See
+[text-carried scripts](OPERATOR.md#carry-a-script-as-a-document).
+
+**Must I re-register whenever the next brief has a different filename?**
+No. Use the complete explicit `--brief REPO:PATH` selection for that send.
+It replaces, rather than augments, the immutable registration's starting defaults.
+Include the supporting context and write-back snapshots as well as the new brief.
+Do not edit private task state or create another task just to change this selection.
+
 **Can the outside agent apply a different brief after a plan was approved?**
 No. The plan binds the selected committed inputs, packets and target state. A change
 requires a matching new plan/approval rather than silently refreshing captured values.
@@ -239,23 +269,32 @@ handle the TLS interception. Details: README "Environment assumptions".
 ## Git & harvesting
 
 **Which branch is the agent's work on?**
-The branch your working copy had checked out when you assembled the sandbox — check with
-`wsl -d centos-9 -- git -C /home/su/pera-sandbox/prj branch --show-current`.
+For a registered task, use `sandbox-task.sh status TASK` to distinguish the
+registered branch from the current stopped-workspace observation. A running result
+does not establish a fresh HEAD. The collected package records the exact branch and
+candidate head for each repository; do not infer them from today's host checkout.
 
 **Do I need to be on a particular branch to harvest?**
-No. `git fetch <sandbox> <branch>:review/agent-work` only creates a ref; your checked-out
-branch matters only at the final merge/push step. Same-branch (the normal case) works
-identically — and if you haven't committed locally since assembly, integration can be a
-clean `git merge --ff-only review/agent-work`.
+Importing a verified collection bundle into a new local provenance ref does not
+change the checked-out branch. Integrating its changes is a separate approved
+operation against an explicit host branch and HEAD. A fast-forward is appropriate
+only if every intervening change belongs on that branch; import bookkeeping and
+independent host edits often require more selective integration. Use the
+[harvest runbook](OPERATOR.md#harvest-and-integrate-reviewed-work), not a direct
+fetch from the agent-controlled repository.
 
-**Why the three-dot diff (`branch...review/agent-work`)?**
-It diffs from the merge-base — exactly what the agent changed — even if your local
-branch gained commits while the agent worked. Two dots would mix in changes the agent
-never saw.
+**Which diff should the outside reviewer use?**
+The collection's `changes.patch` uses its recorded full audit base; `work.patch`
+focuses on work after the latest complete handoff. Review them together with the
+history and input provenance. A three-dot diff from the host's current branch is
+not a substitute for those explicit bases and does not remove import bookkeeping
+or already-present document synchronization changes.
 
 **The agent changed files in Documentation too — one harvest or two?**
-Two: `prj` and `Documentation` are independent repos in the sandbox just like on your
-machine. Repeat the fetch/review against `.../pera-sandbox/Documentation`.
+One task `collect` packages both repositories, with separate candidates and artifacts.
+Host integration remains per repository and can be partial. Record any withheld
+document and retain its original collection: later collection bases have already
+advanced and may not include that outstanding edit again.
 
 **I reset the sandbox and lost commits. Recoverable?**
 No — `--force` deletes the workspace including its git objects. Harvest before every

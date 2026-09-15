@@ -70,7 +70,8 @@ or after review (trusted).
 [build]    podman build      CentOS 9 + JDK17 + Maven 3.9 + Node 22 + Chromium + Claude Code
 [prepare]  prepare-sandbox   network OPEN: node cache, mvn -P agencyWWW, npm ci   (one-time)
 [run]      run-agent         firewall -> Anthropic only, purge creds, start claude
-[review]   (host)            git log/diff in the sandbox -> fetch into real repo -> push
+[collect]  sandbox-task.sh   stopped, committed work -> private two-repo audit package
+[review]   (host)            inspect collected work -> approve explicit host integration
 ```
 
 For repeated review rounds, keep the same workspace and caches. The operator can
@@ -84,6 +85,11 @@ The preferred operator is now the **outside agent**, using task registration,
 `send`, `status` and `collect` rather than asking a person to manage packets and
 expected HEADs. See [OPERATOR.md](OPERATOR.md). The low-level commands remain available
 for diagnostics and recovery; the guarded agent launch is unchanged.
+
+Each handoff must account for required context and shared write-back documents.
+Snapshots do not refresh canonical files or detect every stale reference.
+Collection likewise does not merge or publish work: host integration and any push
+remain separate decisions. See the [harvest procedure](OPERATOR.md#harvest-and-integrate-reviewed-work).
 
 ## Usage
 
@@ -252,26 +258,21 @@ PR requirements remain useful backstops, not protection for every possible write
 
 ### 5. Review from Windows
 
-```powershell
-wsl -d centos-9 -- git -C /home/su/pera-sandbox/prj log --oneline -20
+After the sandbox work is committed and its agent/container stopped, ask the outside
+agent to inspect the registered task and `collect` it. The resulting package covers
+both `prj` and `Documentation`, with explicit full/focused diff bases and candidate
+heads. Open the collected diffs in the host editor; reviewing them does not require
+reopening the agent workspace or running host Git against its configuration.
 
-# Pull into a review branch (works from any checked-out branch; fetch never touches
-# your working tree). <your-working-branch> = the branch your working copy was on when
-# the sandbox was assembled (the agent committed onto it). Use +<your-working-branch>:...
-# to force-update an existing review branch.
-cd C:\work\pera\prj
-git fetch \\wsl$\centos-9\home\su\pera-sandbox\prj <your-working-branch>:review/agent-work
-git diff <your-working-branch>...review/agent-work   # three dots: only the agent's changes
-# integrate: push as a Bitbucket PR branch (recommended), merge, or cherry-pick
-git push origin review/agent-work:feature/EPD-xxx
-```
+Follow [OPERATOR.md: harvest and integrate reviewed work](OPERATOR.md#harvest-and-integrate-reviewed-work)
+to verify the package, import bundles into retained provenance refs and select the
+work that actually belongs on each host branch. Do not force-update an old review
+ref or blindly merge import bookkeeping into the application history.
 
-Repeat against `pera-sandbox/Documentation` if the task changed docs (two repos, two
-harvests). On the first harvest, eyeball `git diff --stat` for whole-file rewrites —
-that pattern would indicate line-ending noise (prj has no .gitattributes).
-
-VS Code option: install the Dev Containers extension, set `dev.containers.dockerPath` to
-`podman`, and open `\\wsl$\centos-9\home\su\pera-sandbox` → Reopen in Container.
+The outside agent presents an integration summary for approval. Documentation may
+need reconciliation with independent host amendments even when code can fast-forward.
+Record incomplete integration explicitly; collection, integration and pushing are
+separate decisions.
 
 ## Caveats & known limits
 

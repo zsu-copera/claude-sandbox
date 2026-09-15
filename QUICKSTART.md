@@ -151,6 +151,30 @@ The task-aware commands are `register`, `send`, `status` and `collect` in
 remain separate. Attaching in-progress work requires an explicit audit baseline;
 registration must not hide existing changes by assuming the latest HEAD is the start.
 
+Before each send, the outside agent inventories required references and the documents
+the sandbox will write back, not just the new brief. The registered `briefs` list is
+fixed; a later `--brief` selection replaces that entire list for the invocation.
+Include needed host amendments to shared documents, and explicitly decide how the
+agent should reconcile them with its canonical copies. Imports do not synchronize
+those copies. See [context and ownership](OPERATOR.md#select-context-and-assign-document-ownership)
+and [text-carried scripts](OPERATOR.md#carry-a-script-as-a-document).
+
+Allow minutes for controller operations, not a short interactive-command timeout:
+EEP-24's first send preview exceeded a 120-second client timeout. This is an observed
+duration, not a deadline or a promise about future runs. Keep the same invocation
+attached in a tracked long-running session and retrieve its eventual result rather
+than starting a duplicate command. If the caller was interrupted and the outcome is
+unknown, inspect controller/container status before retrying; do not kill it or
+remove locks merely because the client timed out.
+
+Agent stop and relaunch remain deliberate human/operator transitions. Finish and
+commit the sandbox work, stop the agent/container, let the outside agent inspect
+and collect, then audit and approve any host integration separately. The next send
+gets its own plan approval; its success does not start another agent. The outside
+agent supplies the [snapshot path map](OPERATOR.md#bridge-cited-paths-in-the-launch-handoff)
+for the normal guarded relaunch. See [harvest and integration](OPERATOR.md#harvest-and-integrate-reviewed-work)
+for bundle provenance, selection and conflict handling.
+
 The following low-level sequence is retained for manual diagnosis and recovery:
 
 Assemble and warm once for the task. For each subsequent brief or external review,
@@ -214,8 +238,10 @@ attributes; no global Git or agent settings are changed.
 Restart with the usual guarded step-4 command and explicitly tell the agent to read
 `/workspace/Documentation/sandbox-rounds/EPD-123/02/README.md` and follow that round's
 brief. Resolve referenced files using the original paths in the manifest; do not
-assume those references were also refreshed. For the next external review, use a
-new round ID and packet. If both repos need inputs, import them separately: there
+assume those references were also refreshed. For selected inputs, explicitly map
+the cited original paths to their `files/<original-path>` snapshots; canonical
+write-back targets are separate from those immutable inputs. For the next external
+review, use a new round ID and packet. If both repos need inputs, import them separately: there
 is no cross-repository atomic transaction.
 
 No prepare is required merely for the imported documents. If the resulting task
@@ -283,34 +309,32 @@ deployed; record its image ID and startup outcome in the review record.
 
 ## Review & harvest — from Windows
 
-You can be on **any** branch in your real repo — `git fetch` only creates a ref; your
-checked-out branch matters only at the final merge step.
+Ask the outside agent to inspect and collect the registered task after the sandbox
+agent has committed and stopped. These are the task-aware operations, with the
+actual registered ID substituted for `TASK-1`:
 
 ```powershell
-# Inspect what the agent committed (and which branch it's on)
-wsl -d centos-9 -- git -C /home/su/pera-sandbox/prj branch --show-current
-wsl -d centos-9 -- git -C /home/su/pera-sandbox/prj log --oneline -15
-
-# Fetch into a review branch. <your-working-branch> = the branch your working copy was
-# on when the sandbox was assembled — the agent committed onto it (check with step 1
-# above). Use +<your-working-branch>:... to force-update an existing review branch.
-cd C:\work\pera\prj
-git fetch \\wsl$\centos-9\home\su\pera-sandbox\prj <your-working-branch>:review/agent-work
-
-# Review: three dots = only what the agent changed, even if your branch moved on
-git log  --oneline <your-working-branch>..review/agent-work
-git diff <your-working-branch>...review/agent-work
-
-# Integrate — pick one:
-git push origin review/agent-work:feature/EPD-xxx   # (recommended) Bitbucket PR + CI
-# or: git checkout <your-working-branch>; git merge --no-ff review/agent-work; git push
-# or: cherry-pick selected commits
-
-git branch -D review/agent-work                     # cleanup
+wsl -d centos-9 -- bash /mnt/c/work/pera/claude-sandbox/sandbox-task.sh status TASK-1
+wsl -d centos-9 -- bash /mnt/c/work/pera/claude-sandbox/sandbox-task.sh collect TASK-1
 ```
 
-If the task touched docs, repeat against `...\pera-sandbox\Documentation` into
-`C:\work\pera\Documentation` — two repos, two harvests.
+Diagnose a non-ready status before collecting; do not bypass the guards with direct
+host Git commands on the agent repository. Running, dirty, busy or recovery-required
+workspaces need resolution first. Committed input-integrity problems can still be
+collected for audit under the runbook's existing rules; they must not be reset away.
+Collection publishes one private package containing both repositories, not an
+automatic merge into either host checkout.
+
+The outside agent follows [the harvest runbook](OPERATOR.md#harvest-and-integrate-reviewed-work):
+verify the package and bundle prerequisites, fetch into new retained provenance refs,
+review full and focused changes, and propose the exact host integration for approval.
+No force-updating refs, selecting an audit base from the current host branch, or
+assuming import/log-sync commits belong on the host.
+
+Host integration is separate per repository. Preserve any conflicting or withheld
+document in the original package and record it as outstanding; a completed collection
+does not mean every change was accepted, and the next collection may not repeat it.
+Any push requires separate authorization.
 
 ## Reset for the next task
 
