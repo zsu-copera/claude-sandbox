@@ -334,6 +334,89 @@ Implementation commits: `9786e80` (repository inspection/collection) and `0fb50c
 (task controller and retained-delivery safeguards), on `feat/sandbox-task-operator`.
 No real workspace was registered, sent or collected during this implementation.
 
+### First live task: EEP-24, 2026-09-15
+
+This is subsequent live-use evidence, not a replacement for the implementation
+history above. The outside operator supplied
+`Sandbox-Operator-Findings-2026-09-15.md` outside the scaffold. Its observations
+were reconciled with the retained private task record, plans and two collection
+packages, plus the host repositories' `refs/sandbox/EEP-24-round4` and
+`refs/sandbox/EEP-24-round5`. No private packet/package contents are copied into
+this repository.
+
+The task attached an existing user-assembled workspace with `agencyWWW` reported
+warmed. Registration recorded `prj` at `72d6b2801ffea0541938c263115d33169fafd0c9`
+and `Documentation` at `71dcf749b3f0307eb1ea8f87aae6fa4597e8935d`, on their
+EEP-24 task branches. The pinned image was
+`sha256:893d19013d16066cacf386c442fd9d906f70792da74a046027f996ca7fed00d6`.
+Image identity alone does not establish deployed E1 script parity or pin the
+staged agent CLI version.
+
+| Application pass | Operator handoff | Source commit | Documentation import | Collected prj / Documentation heads |
+|---|---|---|---|---|
+| Round 4 | R1 | `d8119d0082557ec3d898f5515a17738eab1c7837` | `5fefbfa86a4b49af244f57c6b5647be177bbd81d` | `2a68f8c9d5a5cd600179982ca311ce34e6900885` / `54c50a5a14b5a951f44f9a7e0f67096f8672f7b9` |
+| Round 5 | R2 | `8b56a781e75bc4b949234a156863dbed2e061b61` | `257401591c762b3a3c19b9d756051422bf9c90d3` | `1d6fc6b14d15d6d35e7c410305039d72c6314a14` / `e05cf81aed338a1b4f5b1bee264a4b5f45fa4230` |
+
+Both send plans completed, with **Documentation-only imports and prj preserved**:
+
+- R1 plan: `b9d855359d22c192146dd23b511691dd7cdada462da5071d7e331530f76851c5`.
+- R2 plan: `fec2d83c7b4a21c45db3cf2fe139085fa830c0546f87f0cc37218517b6303b6f`.
+
+R1 supplied the missing visual harness; the round-4 brief already existed in the
+clone. R2 supplied the round-5 brief, host-amended implementation log, a Markdown
+document carrying the scroll probe and its textual summary. The shared README
+was not selected. Application round numbers and controller handoff numbers are
+different namespaces.
+
+| Collection | ID | Root manifest SHA-256 |
+|---|---|---|
+| 1 | `da678b6ce1524ddf3a219ee548c97581a3e5c4f51ab78aca0d82df7a7c9ebb4e` | `331419860b7afa6ea1f628cefef4aaa5bfd5643fd853b579b78f6dccdfdb16a9` |
+| 2 | `78a74bcfa54184681d032b37f0dc4bef10bcfa2a726d71aed1ef1e83a8282c17` | `ab7d54abb0ac86042515dd42e3904e0d5e74d6eb74c5563bc9afc67ede3bed32` |
+
+The maintainer's read-only follow-up recomputed both root-manifest hashes and
+matched every listed patch/bundle SHA-256 against the retained artifacts.
+Collection 2's Documentation full diff is 395,270 bytes and its focused work diff
+59,065 bytes: their bases straddle the R2 import. This demonstrates why the focused
+diff is useful without replacing the full history.
+Evidence remains in
+`${XDG_STATE_HOME:-$HOME/.local/state}/pera-sandbox-tasks/EEP-24/collections/`
+and the retained host provenance refs. This follow-up did not run a new task,
+import, collection or application build.
+
+The operator reported that registration refused while an agent container held the
+workspace, and low-level inspection returned `running` with
+`observedWorktree:false`. It also reported both approval/apply sequences and intact
+input inventories. Retained receipts support the completed import/collection
+identities; they are not a transcript independently establishing every interaction
+or who approved it.
+
+Host audit commits `4196ec710` and `e6964fe16` record acceptance of application
+rounds 4 and 5. The latter records local-deployment confirmation of the background
+scroll fix, while leaving scrollbar appearance and post-close motion observations
+open. The intermediate harvest `90888350a` deliberately excluded the stale-base
+README; the later audit reconciled it. These application records are not scaffold
+containment assertions.
+
+The report additionally records an unmodified-tree `verify-tasks.sh` run of
+63/63 Node cases in 157 seconds on 2026-09-15. This is attributed operator evidence,
+not a claim that the maintainer reran that suite during documentation closeout.
+It supplements the dated 44-case run and later targeted additions above.
+
+**Not exercised by this live trial:** interrupted import/recovery, foreign locks,
+busy rebase/detached states, partial two-repository sends, same-plan retry,
+unchanged-input no-op, completed-plan replay, LFS handling, reduced-access
+behavior, multiple tasks/workspaces/images, or registration of already-in-progress
+work. Existing fixture coverage for some of these remains distinct from live use.
+Both application passes used Claude via `run-agent`; a Copilot container was
+started and exited without implementing work. The trial does not establish
+Copilot execution behavior, mandatory reviewer/model orchestration, comprehensive
+cache identity, or stronger unattended-isolation guarantees.
+
+**Operational gaps remain:** required-context discovery, source/canonical document
+drift and write-back ownership are not enforced by the controller. The current
+runbook adds explicit operator decisions and reviewed harvest guidance; it does
+not implement automatic synchronization, attachments or integration.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is
