@@ -243,6 +243,12 @@ perform() {
             if [[ $action == source ]]; then
                 root=$(resolve "$(jq -er .args.source "$request")")
                 args=(source "$(jq -er .args.ref "$request")")
+                if jq -e '.args | has("paths")' "$request" >/dev/null; then
+                    jq -e '.args.paths | type == "array" and length <= 128
+                        and all(.[]; type == "string" and (test("[\u0000-\u001f\u007f]") | not))' \
+                        "$request" >/dev/null || { printf 'Invalid source document path list.\n' >&2; return 1; }
+                    while IFS= read -r selected; do args+=("$selected"); done < <(jq -r '.args.paths[]' "$request")
+                fi
             else
                 root=$(resolve "$(jq -er '.args.workspace + "/" + .args.repository' "$request")")
                 args=(import-head "$(jq -er .args.head "$request")" "$(jq -er .args.base "$request")" "$(jq -er .args.roundPath "$request")")

@@ -12,7 +12,7 @@ Usage:
     --repository prj|Documentation --packet PACKET [--expected-head SHA]
     [--image IMAGE]
   bash sandbox-round.sh inspect [--workspace WORKSPACE]
-    --repository prj|Documentation [--base SHA] [--image IMAGE]
+    --repository prj|Documentation [--base SHA] [--path FILE ...] [--image IMAGE]
   bash sandbox-round.sh collect [--workspace WORKSPACE]
     --repository prj|Documentation --base SHA --work-base SHA
     --expected-head SHA --output NEW_DIRECTORY [--image IMAGE]
@@ -30,6 +30,9 @@ Stop containers using this workspace before intake; other manual edits must also
 remain stopped. The workspace lock coordinates this wrapper, not arbitrary tools.
 Inspect reports known running containers without reading a live worktree. Collect
 exports clean committed work read-only; it never pushes, merges or changes a repo.
+Inspect --path returns bounded committed-document identities, not file contents.
+Running, dirty, busy or recovery states return unobserved documents instead.
+Without --path, the existing inspection output is unchanged.
 Changed LFS pointers/attributes require separate artifact handling and block collect.
 
 Windows: invoke this Bash entrypoint with wsl -d centos-9 -- bash SCRIPT ...
@@ -73,7 +76,7 @@ if [[ $mode == export ]]; then
         [[ ! -v "options[$flag]" ]] || die "$flag is not valid for export."
     done
 else
-    [[ ${#paths[@]} == 0 ]] || die '--path is only valid for export.'
+    [[ ${#paths[@]} == 0 || $mode == inspect ]] || die '--path is only valid for export or inspect.'
     for flag in --source --ref --task --round; do
         [[ ! -v "options[$flag]" ]] || die "$flag is only valid for export."
     done
@@ -104,12 +107,19 @@ for flag in --expected-head --base --work-base; do
             || die "$flag must be a full lowercase Git object ID (40 or 64 characters), not a placeholder or abbreviated hash."
     fi
 done
+if [[ $mode == inspect && ${#paths[@]} -gt 128 ]]; then
+    die 'Inspect supports at most 128 document paths.'
+fi
 
 for program in podman jq flock realpath sha256sum stat dirname basename mkdir chmod ln rm mv id; do
     command -v "$program" >/dev/null 2>&1 || die "Required WSL command is missing: $program"
 done
 [[ $(id -u) != 0 ]] || die 'Run this wrapper as the normal rootless container user.'
 [[ -n ${HOME:-} && $HOME == /* ]] || die 'HOME must be an absolute path.'
+inspect_paths='[]'
+if [[ $mode == inspect && ${#paths[@]} -gt 0 ]]; then
+    inspect_paths=$(jq -cn --args '$ARGS.positional' -- "${paths[@]}")
+fi
 
 mount_path() {
     [[ $1 != *[,:]* && $1 != *$'\n'* && $1 != *$'\r'* ]] || die 'Mount paths cannot contain commas, colons or newlines.'
@@ -285,8 +295,11 @@ if [[ -n $running ]]; then
         mounted=$(realpath -m -- "$mounted") || die 'Cannot resolve an active container mount.'
         if overlaps "$workspace" "$mounted"; then
             if [[ $mode == inspect ]]; then
-                jq -n --arg repository "$repository" --arg mount "$mounted" \
-                    '{status:"running",repository:$repository,observedWorktree:false,containers:[{mount:$mount}]}'
+                jq -n --arg repository "$repository" --arg mount "$mounted" --argjson paths "$inspect_paths" \
+                    '{status:"running",repository:$repository,observedWorktree:false,containers:[{mount:$mount}]}
+                    + (if ($paths | length) > 0 then
+                        {documents: ($paths | map({path:.,observation:{state:"unobserved",reason:"running"}}))}
+                       else {} end)'
                 exit 0
             fi
             die 'A running container mounts this workspace. Stop it before intake or collection.'
@@ -297,6 +310,7 @@ fi
 if [[ $mode == inspect ]]; then
     args=(inspect --root /repo --state /state --repository "$repository")
     [[ ! -v 'options[--base]' ]] || args+=(--base "${options[--base]}")
+    for selected in "${paths[@]}"; do args+=(--path "$selected"); done
     container_attempted=1
     "${container[@]}" --mount "type=bind,src=$target,dst=/repo,ro" \
         --mount "type=bind,src=$state,dst=/state,ro" "$image" -c "$bootstrap" \

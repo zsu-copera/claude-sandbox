@@ -75,6 +75,63 @@ function documentPath(value) {
     return value;
 }
 
+function documentPaths(values) {
+    requireThat(Array.isArray(values) && values.length > 0 && values.length <= MAX_DOCUMENTS, 'Invalid observation path count');
+    const seen = new Set();
+    return values.map(value => {
+        documentPath(value);
+        requireThat(utf8(Buffer.from(value)) === value, 'Document path contains invalid Unicode');
+        requireThat(!seen.has(value.toLowerCase()), 'Duplicate or case-colliding observation paths');
+        seen.add(value.toLowerCase());
+        return value;
+    });
+}
+
+function isLfsPointer(content) {
+    return content.startsWith('version https://git-lfs.github.com/spec/v1\n');
+}
+
+function observeDocuments(readGit, commit, selectedPaths) {
+    requireThat(typeof readGit === 'function' && typeof commit === 'string' && OID.test(commit), 'Invalid document inspection identity');
+    const paths = documentPaths(selectedPaths);
+    const read = args => {
+        const bytes = readGit(args);
+        requireThat(Buffer.isBuffer(bytes), 'Document inspection requires byte-preserving Git output');
+        return bytes;
+    };
+    return paths.map(selected => {
+        const unsupported = reason => ({ path: selected, observation: { state: 'unsupported', commit, reason } });
+        const tree = read(['--literal-pathspecs', 'ls-tree', '-z', '--full-tree', commit, '--', selected]);
+        if (!tree.length) return { path: selected, observation: { state: 'missing', commit } };
+        const entry = /^([0-7]{6}) (blob|tree|commit) ([0-9a-f]+)\t([^\0]+)\0$/.exec(utf8(tree));
+        requireThat(entry && entry[4] === selected && OID.test(entry[3])
+            && entry[3].length === commit.length, 'Unexpected document tree entry');
+        if (entry[1] !== '100644' || entry[2] !== 'blob') return unsupported('Expected a non-executable regular document');
+        const blob = entry[3];
+        const sizeText = utf8(read(['cat-file', '-s', blob]));
+        requireThat(/^(0|[1-9][0-9]*)\n?$/.test(sizeText), 'Invalid document object size');
+        const size = Number(sizeText);
+        requireThat(Number.isSafeInteger(size), 'Invalid document object size');
+        if (size > MAX_DOCUMENT) return unsupported('Document exceeds the size limit');
+        const bytes = read(['cat-file', 'blob', blob]);
+        requireThat(bytes.length === size, 'Document object size changed during inspection');
+        const algorithm = blob.length === 40 ? 'sha1' : 'sha256';
+        const actual = crypto.createHash(algorithm).update(`blob ${bytes.length}\0`).update(bytes).digest('hex');
+        requireThat(actual === blob, 'Document blob identity does not match its bytes');
+        let content;
+        try {
+            content = utf8(bytes);
+        } catch (error) {
+            if (error.code !== 'ERR_ENCODING_INVALID_ENCODED_DATA') throw error;
+            return unsupported('Document is not valid UTF-8 text');
+        }
+        if (content.includes('\0')) return unsupported('Document contains NUL bytes');
+        if (isLfsPointer(content)) return unsupported('LFS pointer requires separate payload handling');
+        return { path: selected, observation: { state: 'present', commit, blob,
+            mode: entry[1], bytes: bytes.length, sha256: sha256(bytes) } };
+    });
+}
+
 function exactKeys(object, keys, label) {
     requireThat(object && typeof object === 'object' && !Array.isArray(object), `Invalid ${label}`);
     requireThat(Object.keys(object).sort().join('\0') === [...keys].sort().join('\0'), `Unexpected ${label} fields`);
@@ -154,13 +211,14 @@ function parseArgs(argv) {
             && !options.base && !options['work-base'] && !options.output, 'Unexpected export option');
     } else if (mode === 'inspect' || mode === 'collect') {
         requireThat(options.state && !options.packet && !options.ref && !options.task
-            && !options.round && !options.paths.length, 'Inspection/collection requires state, not brief options');
+            && !options.round, 'Inspection/collection requires state, not brief options');
         if (mode === 'collect') {
-            requireThat(OID.test(options.base) && OID.test(options['work-base'])
+            requireThat(!options.paths.length && OID.test(options.base) && OID.test(options['work-base'])
                 && OID.test(options['expected-head']) && options.output, 'Collection requires full base/work-base/expected-head IDs and an output directory');
         } else {
             requireThat((!options.base || OID.test(options.base)) && !options['work-base']
                 && !options['expected-head'] && !options.output, 'Unexpected inspection option');
+            if (options.paths.length) options.paths = documentPaths(options.paths);
         }
     } else {
         requireThat(options.state && options.packet && !options.ref && !options.task
@@ -881,11 +939,27 @@ function inspectRepository(repo, options) {
     }
     const changes = pending || operations.length ? null : repo.workingChanges();
     const inventory = observedWorktree ? roundInventory(repo, head, options.repository) : { rounds: [], checkpoints: [] };
+    const status = pending ? 'recovery-required' : operations.length ? 'busy' : changes.length ? 'dirty' : 'clean';
+    let documents;
+    if (options.paths.length) {
+        if (status === 'clean') {
+            const indexHash = sha256(fs.readFileSync(path.join(repo.control, 'index')));
+            const currentIndex = () => sha256(fs.readFileSync(path.join(repo.gitDir, 'index')));
+            requireThat(currentIndex() === indexHash, 'Workspace index changed during document inspection');
+            documents = observeDocuments(args => repo.git(args), head, options.paths);
+            repo.assertClean();
+            requireThat(!exists(state.pending) && currentIndex() === indexHash, 'Workspace state changed during document inspection');
+        } else {
+            documents = options.paths.map(selected => ({ path: selected,
+                observation: { state: 'unobserved', reason: status } }));
+        }
+    }
     requireThat(fs.readFileSync(path.join(repo.gitDir, 'HEAD'), 'utf8') === repo.headText
         && repo.head() === head, 'HEAD changed during inspection');
-    return { status: pending ? 'recovery-required' : operations.length ? 'busy' : changes.length ? 'dirty' : 'clean',
+    return { status,
         repository: options.repository, head, branch, changes, operations, pending, observedWorktree, ...inventory,
-        ...(options.base && observedWorktree ? { baseHead: options.base } : {}) };
+        ...(options.base && observedWorktree ? { baseHead: options.base } : {}),
+        ...(documents ? { documents } : {}) };
 }
 
 function digestFile(file) {
@@ -925,7 +999,7 @@ function collectionLfsBlockers(repo, base, head) {
         }
         if (size > 1024) continue;
         const bytes = repo.git(['cat-file', 'blob', oid]).toString('utf8');
-        if (!bytes.startsWith('version https://git-lfs.github.com/spec/v1\n')) continue;
+        if (!isLfsPointer(bytes)) continue;
         const attributes = repo.git(['check-attr', '--cached', '-z', 'filter', '--', name]).toString('utf8').split('\0');
         if (attributes[2] === 'lfs') blockers.push(name);
     }
@@ -949,7 +1023,7 @@ function bundledLfsPointers(repo, base, head) {
             requireThat(Number.isSafeInteger(size), 'Invalid bundle object size');
             if (match[2] !== 'blob' || size > 1024) continue;
             const content = repo.git(['cat-file', 'blob', match[1]]).toString('utf8');
-            if (content.startsWith('version https://git-lfs.github.com/spec/v1\n')) pointers.push(match[1]);
+            if (isLfsPointer(content)) pointers.push(match[1]);
         }
     }
     return pointers;
@@ -1033,4 +1107,5 @@ if (require.main === module) {
     }
 }
 
-module.exports = { main, validatePacket, packetFiles, sha256, documentPath, MAX_DOCUMENT, MAX_DOCUMENTS };
+module.exports = { main, validatePacket, packetFiles, sha256, documentPath, documentPaths,
+    observeDocuments, MAX_DOCUMENT, MAX_DOCUMENTS };

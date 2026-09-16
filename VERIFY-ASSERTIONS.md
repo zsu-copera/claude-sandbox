@@ -446,11 +446,65 @@ passed all 27 context cases plus the existing closed-config compatibility case.
 The runner also reports an unmatched repository-test file as a passing file entry;
 that is not another exercised case. This was not a full controller/integration run.
 
-**Not wired yet:** `--handoff`, document observation by the runtime helpers,
+**At phase-1 completion, not wired yet:** `--handoff`, document observation by the runtime helpers,
 version-2 task metadata/plans, context-aware status/collection, and generated
 handoff path maps. This phase creates no registration, updates no private task
 state, and changes no live sandbox or application repository. Decision results
 are proposed handoff instructions, not automatic canonical-file edits.
+
+### Read-only document observations (phase 2), 2026-09-16
+
+`sandbox-round.sh inspect` now accepts optional repeated `--path` arguments.
+The trusted source helper accepts optional document paths alongside its named
+source ref, and the task broker can forward that bounded list. No normal task
+command selects these paths yet. Calls without document paths preserve the
+previous source/inspection JSON shape.
+
+Both helpers reuse `observeDocuments` in `tools/rounds/rounds.js`. The reader takes
+a Git-byte callback, pinned commit and literal path list, with no repository-name
+assumptions. It returns only path/observation pairs compatible with the phase-1
+contract. It checks object size and Git blob identity before classifying text,
+and preserves line endings/BOM bytes in the content hash. Missing tree entries
+are distinct from Git/I/O failures. Executables, symlinks, directories, oversized
+documents, invalid UTF-8/NUL content and LFS pointers are not represented as usable
+document contents; they return explicit unsupported observations.
+
+Source reads use the named committed branch, not the current checkout or working
+edits, and refuse source-ref movement during an observation. Target document reads
+require clean stopped state and recheck HEAD, the copied/real index, worktree
+cleanliness, operation markers and recovery state before returning. Running,
+dirty, busy and recovery-required cases produce unobserved entries, without
+fresh document commit/hash claims. Neither helper applies document edits, runs
+filters/text conversion, or imports external ancestry.
+
+Recorded 2026-09-16: the existing task runner selector
+`observations|source helper retains|repository inspect|LFS` passed 53 named cases,
+including all 30 new observation/source cases, existing observation-contract
+cases, retained-input inspection and LFS collection regressions. Its TAP total
+of 54 also includes an unmatched controller-test file entry, not another case.
+Test-only preload coverage changes the worktree, index, HEAD, a Git lock or private
+pending state during a read; each observation is refused and the injected data is
+left in place rather than rolled back.
+
+The actual WSL wrapper's focused scenario also passed:
+
+```bash
+cd "$HOME"
+bash /mnt/c/work/pera/claude-sandbox/tests/tasks/wrapper-integration.sh \
+  --image localhost/pera-sandbox --observations-only
+```
+
+This uses disposable repositories and private fixture state, verifies unchanged
+legacy output and source/workspace bytes, and exercises read-only source/target
+mounts plus missing, dirty and running outcomes. Cleanup retains the existing
+all-container mount guard. No live EEP-24 registration, import, collection, agent
+run, image rebuild or prepare was performed; the full task-controller integration
+scenario was not rerun for this phase.
+
+**Still pending:** the `--handoff` interface, version-2 metadata and approval plans,
+automatic context comparison in task status/send, context-aware collection
+identity and generated handoff maps. Low-level observations do not establish
+handoff completeness or authorize canonical write-back by themselves.
 
 ## Deliberately not asserted
 

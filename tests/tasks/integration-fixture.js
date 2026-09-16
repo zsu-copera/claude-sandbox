@@ -3,7 +3,7 @@
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { createFixture, repository, git, write, tree } = require('../rounds/fixtures');
+const { createFixture, repository, git, write, tree, sha256 } = require('../rounds/fixtures');
 
 process.umask(0o077);
 const [mode, hostRoot] = process.argv.slice(2);
@@ -33,7 +33,36 @@ if (mode === 'setup') {
 } else {
     const f = read('fixture.json');
     const docsSource = path.join(root, 'external documentation');
-    if (mode === 'check-plan') {
+    if (mode === 'observation-dirty') {
+        write(root, 'observation-original.txt', fs.readFileSync(path.join(f.target, 'README.md')));
+        write(f.target, 'README.md', 'Pending canonical document edit\n');
+    } else if (mode === 'observation-restore') {
+        write(f.target, 'README.md', fs.readFileSync(path.join(root, 'observation-original.txt')));
+    } else if (mode === 'check-observations') {
+        const before = read('before.json');
+        assert.deepEqual(tree(f.workspace), before.workspace);
+        assert.deepEqual(tree(f.source), before.source);
+        assert.deepEqual(tree(docsSource), before.documentation);
+        const { documents, ...legacy } = read('observation-clean.json');
+        assert.deepEqual(legacy, read('observation-legacy.json'));
+        assert.deepEqual(documents.map(item => item.path), ['README.md', 'missing.md']);
+        assert.equal(documents[0].observation.sha256, sha256(Buffer.from('Canonical README remains unchanged.\n')));
+        assert.equal(documents[1].observation.state, 'missing');
+        const source = read('observation-source.json');
+        assert.equal(source.head, f.sourceHead);
+        assert.equal(source.documents[0].observation.sha256, sha256(Buffer.from('# First committed review\n\nUse the retained caches.\n')));
+        assert.equal(source.documents[1].observation.state, 'missing');
+        const dirty = read('observation-dirty.json');
+        assert.equal(dirty.status, 'dirty');
+        assert.deepEqual(dirty.documents, [{ path: 'README.md', observation: { state: 'unobserved', reason: 'dirty' } }]);
+        const running = read('observation-running.json');
+        assert.equal(running.status, 'running');
+        assert.equal(running.observedWorktree, false);
+        assert.ok(!Object.hasOwn(running, 'head'));
+        assert.deepEqual(running.documents, ['README.md', 'missing.md'].map(name => ({
+            path: name, observation: { state: 'unobserved', reason: 'running' },
+        })));
+    } else if (mode === 'check-plan') {
         const before = read('before.json');
         assert.deepEqual(tree(f.workspace), before.workspace, 'Register and planning must not modify workspace');
         assert.deepEqual(tree(f.source), before.source);

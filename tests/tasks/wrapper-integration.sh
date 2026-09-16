@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
-[[ $# == 2 && $1 == --image && -n $2 && $2 != -* ]] || { echo 'Expected --image IMAGE.' >&2; exit 2; }
+[[ $# == 2 || $# == 3 ]] || { echo 'Expected --image IMAGE [--observations-only].' >&2; exit 2; }
+[[ $1 == --image && -n $2 && $2 != -* ]] || { echo 'Expected --image IMAGE [--observations-only].' >&2; exit 2; }
 image=$2
+observations_only=0
+if [[ $# == 3 ]]; then
+    [[ $3 == --observations-only ]] || { echo 'Unknown integration selector.' >&2; exit 2; }
+    observations_only=1
+fi
 tests=$(realpath -e -- "$(dirname -- "${BASH_SOURCE[0]}")")
 scaffold=$(realpath -e -- "$tests/../..")
 source "$scaffold/tests/rounds/mount-guard.sh"
@@ -64,6 +70,42 @@ expect_failure() {
 }
 fixture setup
 export XDG_STATE_HOME="$root/operator-state"
+round_wrapper="$scaffold/sandbox-round.sh"
+bash "$round_wrapper" inspect --workspace "$root/retained workspace" --repository prj \
+    --image "$image" > "$root/observation-legacy.json"
+bash "$round_wrapper" inspect --workspace "$root/retained workspace" --repository prj \
+    --path README.md --path missing.md --image "$image" > "$root/observation-clean.json"
+source_probe="pera-task-fixture-$nonce-source-observation"
+owned_names+=("$source_probe")
+podman run --rm --pull=never --name "$source_probe" --label "io.pera.task-fixture=$nonce" \
+    --network=none --cap-drop=all --security-opt=no-new-privileges --userns=keep-id \
+    --http-proxy=false --unsetenv-all --env PATH=/usr/local/bin:/usr/bin:/bin \
+    --env HOME=/nonexistent --entrypoint node \
+    --mount "type=bind,src=$root/external source,dst=/repo,ro" \
+    --mount "type=bind,src=$scaffold/tools/tasks,dst=/opt/tasks,ro" \
+    --mount "type=bind,src=$scaffold/tools/rounds/rounds.js,dst=/opt/rounds.js,ro" \
+    "$image" /opt/tasks/source.js source refs/heads/sandbox-fixture \
+    'briefs/first brief.md' missing.md > "$root/observation-source.json"
+fixture observation-dirty
+bash "$round_wrapper" inspect --workspace "$root/retained workspace" --repository prj \
+    --path README.md --image "$image" > "$root/observation-dirty.json"
+fixture observation-restore
+observation_blocker="pera-task-fixture-$nonce-observation-blocker"
+owned_names+=("$observation_blocker")
+podman run --detach --rm --pull=never --name "$observation_blocker" --label "io.pera.task-fixture=$nonce" \
+    --network=none --cap-drop=all --security-opt=no-new-privileges --userns=keep-id \
+    --http-proxy=false --unsetenv-all --entrypoint /usr/bin/sleep \
+    --mount "type=bind,src=$root/retained workspace/prj,dst=/repo,ro" "$image" 300 > "$root/observation-blocker.id"
+[[ $(podman container inspect "$observation_blocker" --format '{{.State.Running}}') == true ]]
+bash "$round_wrapper" inspect --workspace "$root/retained workspace" --repository prj \
+    --path README.md --path missing.md --image "$image" > "$root/observation-running.json"
+podman rm --force "$observation_blocker" >/dev/null
+expect_failure bash "$round_wrapper" inspect --workspace "$root/retained workspace" --repository prj \
+    --path ../outside.md --image "$image"
+fixture check-observations
+echo 'PASS document observation wrapper: legacy shape, read-only source/target, absence and dirty/running guards.'
+if [[ $observations_only == 1 ]]; then exit 0; fi
+
 PATH=/unavailable /bin/bash "$wrapper" --help > "$root/help.out"
 PATH=/unavailable /bin/bash "$wrapper" send --help > "$root/send-help.out"
 expect_failure env PATH=/unavailable /bin/bash "$wrapper" send TASK-1 --unknown bad

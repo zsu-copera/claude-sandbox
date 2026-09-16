@@ -221,6 +221,25 @@ inputs; it is not a substitute for the task controller's approval and delivery c
 Committed input corruption can still be collected for audit instead of being hidden
 or reset merely to let another send proceed.
 
+For explicit canonical-document diagnosis, the outside agent can use the trusted
+`sandbox-round.sh inspect` with the registered workspace, repository and image,
+adding repeated `--path` arguments such as `--path README.md --path docs/task.md`.
+Without those arguments, inspection retains its existing output.
+
+The optional `documents` array pairs each requested path with an observation:
+`present` carries the committed identity, mode, byte count and SHA-256; `missing`
+means absent from that observed commit; `unsupported` explains an unsupported
+type/content; and `unobserved` reports a running, dirty, busy or recovery guard
+without presenting an old hash as fresh. No document contents are returned.
+Git/I/O failures and inconsistent object bytes fail the operation rather than
+masquerading as missing files.
+
+These are **committed-byte observations**, not automatic source/canonical
+comparison or synchronization. The trusted source helper can provide corresponding
+observations from a named source branch, ignoring uncommitted source edits.
+Normal task `status` and `send` are not yet wired to the declared-context contract;
+their existing behavior and the manual context/ownership decisions above still apply.
+
 Agent launch remains the existing `run-agent` or `run-copilot` workflow. This controller
 does not reopen a locked container or add automatic reviewer/model behavior.
 
