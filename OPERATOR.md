@@ -225,6 +225,14 @@ pointer. Later legacy rounds commonly need an explicit `--brief` selection that 
 their supporting context and shared write-back snapshots. Do not create a new task
 or edit the private registration merely to change that selection.
 
+An unapplied choice can be revised and then selected again: preparing A, then B,
+then A may return A's original plan ID. The controller revalidates that immutable
+plan and its packets before returning a receipt-free superseded plan to `pending`.
+It does not rewrite the approved contents or reopen completed/partially applied
+work. Present the reselected plan for approval; an old `--apply` request alone
+does not reactivate a superseded plan. Already-inconsistent registries left by
+older code still require separate diagnosis, not manual edits to bypass a refusal.
+
 Present one compact review summary:
 
 | Item | Include |

@@ -537,6 +537,29 @@ class Controller {
         this.planCache?.set(id, plan);
         return plan;
     }
+    activatePlan(id, round) {
+        assert(typeof id === 'string' && HASH.test(id), 'Invalid pending plan ID');
+        const receiptFree = (progress, statuses, label) => {
+            keys(progress, ['status', 'round', 'completed'], `${label} progress`);
+            assert(statuses.includes(progress.status), `${label} is not eligible for pending-plan activation`);
+            assert(progress.completed && typeof progress.completed === 'object' && !Array.isArray(progress.completed)
+                && Object.keys(progress.completed).length === 0, `${label} has import receipts; preserve its recovery state`);
+        };
+        const candidate = this.record.plans[id];
+        if (candidate) {
+            receiptFree(candidate, ['pending', 'superseded'], 'Selected plan');
+            assert(candidate.round === round, 'Selected plan round changed');
+        }
+        const previous = this.record.activePlan && this.record.activePlan !== id
+            ? this.record.plans[this.record.activePlan] : null;
+        if (previous) receiptFree(previous, ['pending'], 'Active plan');
+        else assert(!this.record.activePlan || this.record.activePlan === id, 'Active plan is missing from the registry');
+        // Revalidate an old approval before changing either registry entry.
+        if (candidate) assert(this.plan(id).round === round, 'Stored plan round changed');
+        if (previous) previous.status = 'superseded';
+        this.record.plans[id] = { status: 'pending', round, completed: {} };
+        this.record.activePlan = id;
+    }
     summary(id, status) {
         const plan = this.plan(id);
         const result = { status, task: plan.task, round: plan.round, planId: id,
@@ -716,9 +739,7 @@ class Controller {
                 for (const name of fs.readdirSync(stage)) fs.chmodSync(path.join(stage, name), 0o400);
                 fs.renameSync(stage, destination);
             }
-            if (this.record.activePlan && this.record.activePlan !== id) this.record.plans[this.record.activePlan].status = 'superseded';
-            this.record.plans[id] ||= { status: 'pending', round: plan.round, completed: {} };
-            this.record.activePlan = id;
+            this.activatePlan(id, plan.round);
             if (this.record.version === 1) {
                 this.record.version = 2;
                 this.record.lastContext = null;
@@ -810,9 +831,7 @@ class Controller {
         } else {
             fs.rmSync(stage, { recursive: true });
         }
-        if (this.record.activePlan && this.record.activePlan !== id) this.record.plans[this.record.activePlan].status = 'superseded';
-        this.record.plans[id] ||= { status: 'pending', round, completed: {} };
-        this.record.activePlan = id;
+        this.activatePlan(id, round);
         this.save();
         return this.summary(id, 'approval-required');
     }

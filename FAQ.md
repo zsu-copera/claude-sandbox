@@ -207,6 +207,14 @@ Ordinary later committed work is allowed, but it must preserve the recorded exec
 ancestry and input history. Do not reset or recreate evidence to clear the warning;
 collect the committed changes for audit where the normal collection requirements hold.
 
+**Can I return to an earlier handoff after preparing a replacement?**
+Yes: prepare the original selection again, rather than applying its superseded ID
+directly. If the captured facts still match, a validated receipt-free plan can reuse
+its original ID and become pending again. It still needs approval before apply.
+Completed, applying or partially applied plans are not reopened, and import receipts
+are never discarded. This prevents the A-to-B-to-A reselection failure; it does not
+automatically repair a task record already made inconsistent by older code.
+
 **What does collection do to my host repositories?**
 Nothing automatically. It creates a local, unreviewed audit package from the stopped
 sandbox's committed work. It does not check out, merge or push that work into the

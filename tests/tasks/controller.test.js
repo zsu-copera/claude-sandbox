@@ -847,6 +847,113 @@ test('context controller unrelated commits and equivalent additive declarations 
     assert.equal(f.controller().status().context.status, 'unchanged');
 });
 
+for (const mode of ['legacy', 'context', 'context-metadata']) {
+    test(`${mode} superseded plan reselection restores a usable approval without changing its contents`, t => {
+        const f = setup(t);
+        f.register();
+        if (mode === 'context-metadata') apply(f, contextSend(f));
+        const before = f.record();
+        const workspace = tree(f.workspace);
+        const source = tree(f.source);
+        const choose = variant => mode === 'legacy'
+            ? f.controller().send([variant === 'A' ? 'prj:briefs/first brief.md' : 'prj:briefs/second.txt'])
+            : contextSend(f, handoff(f, { documents: [{
+                ...sharedReadme(), reason: variant === 'A' ? 'Original selected context' : 'Alternative selected context',
+            }] }));
+        const first = choose('A');
+        const packetFiles = tree(path.join(f.registry, 'plans', first.planId));
+        const replacement = choose('B');
+        assert.notEqual(first.planId, replacement.planId);
+        assert.equal(f.record().plans[first.planId].status, 'superseded');
+        const reselected = choose('A');
+        const pending = f.record();
+        assert.equal(reselected.planId, first.planId);
+        assert.equal(reselected.round, first.round);
+        assert.deepEqual(tree(path.join(f.registry, 'plans', first.planId)), packetFiles);
+        assert.deepEqual(tree(f.workspace), workspace);
+        assert.deepEqual(pending.executionHeads, before.executionHeads);
+        assert.deepEqual(pending.collectionHeads, before.collectionHeads);
+        assert.equal(pending.activePlan, first.planId);
+        assert.equal(pending.plans[replacement.planId].status, 'superseded');
+        const result = apply(f, reselected);
+        assert.equal(result.status, 'applied');
+        assert.deepEqual(pending.plans[first.planId], { status: 'pending', round: first.round, completed: {} });
+        assert.equal(f.record().activePlan, null);
+        assert.equal(f.record().plans[first.planId].status, 'completed');
+        assert.throws(() => apply(f, replacement), /superseded|active approval/);
+        assert.equal(apply(f, reselected).status, 'already-applied');
+        assert.deepEqual(tree(f.source), source);
+        if (mode === 'context-metadata') {
+            assert.equal(first.round, null);
+            assert.deepEqual(tree(f.workspace), workspace);
+            assert.deepEqual(f.record().executionHeads, before.executionHeads);
+            assert.deepEqual(f.record().collectionHeads, before.collectionHeads);
+            assert.equal(f.record().lastRound, before.lastRound);
+        } else {
+            assert.equal(fs.existsSync(path.join(f.target, 'sandbox-rounds/TASK-1/R1/files/briefs/first brief.md')), true);
+            assert.equal(fs.existsSync(path.join(f.target, 'sandbox-rounds/TASK-1/R1/files/briefs/second.txt')), false);
+        }
+    });
+}
+
+test('superseded plan activation never reopens protected progress or discards import receipts', t => {
+    const f = setup(t);
+    f.register();
+    const first = send(f);
+    const replacement = f.controller().send(['prj:briefs/second.txt']);
+    const disk = tree(f.registry);
+    for (const status of ['completed', 'partial', 'applying']) {
+        const controller = f.controller();
+        controller.load();
+        controller.record.plans[first.planId].status = status;
+        const before = structuredClone(controller.record);
+        assert.throws(() => controller.activatePlan(first.planId, first.round), /not eligible/);
+        assert.deepEqual(controller.record, before);
+    }
+    for (const status of ['pending', 'superseded']) {
+        const controller = f.controller();
+        controller.load();
+        controller.record.plans[first.planId].status = status;
+        controller.record.plans[first.planId].completed = { prj: { status: 'imported' } };
+        const before = structuredClone(controller.record);
+        assert.throws(() => controller.activatePlan(first.planId, first.round), /import receipts/);
+        assert.deepEqual(controller.record, before);
+    }
+    for (const progress of [
+        { status: 'partial', round: replacement.round, completed: {} },
+        { status: 'pending', round: replacement.round, completed: { prj: { status: 'imported' } } },
+    ]) {
+        const controller = f.controller();
+        controller.load();
+        controller.record.plans[replacement.planId] = progress;
+        const before = structuredClone(controller.record);
+        assert.throws(() => controller.activatePlan(first.planId, first.round), /not eligible|import receipts/);
+        assert.deepEqual(controller.record, before);
+    }
+    assert.deepEqual(tree(f.registry), disk);
+});
+
+test('superseded plan revalidation rejects damaged approvals before changing the active legacy plan', t => {
+    const f = setup(t);
+    f.register();
+    const select = () => f.controller().send(['prj:briefs/first brief.md']);
+    const first = select();
+    const replacement = f.controller().send(['prj:briefs/second.txt']);
+    const file = path.join(f.registry, 'plans', first.planId, 'plan.json');
+    const changed = JSON.parse(fs.readFileSync(file));
+    changed.task = 'CHANGED';
+    fs.chmodSync(file, 0o600);
+    fs.writeFileSync(file, JSON.stringify(changed));
+    const record = f.record();
+    const registry = tree(f.registry);
+    const workspace = tree(f.workspace);
+    assert.throws(select, /Plan bytes no longer match/);
+    assert.deepEqual(f.record(), record);
+    assert.equal(f.record().activePlan, replacement.planId);
+    assert.deepEqual(tree(f.registry), registry);
+    assert.deepEqual(tree(f.workspace), workspace);
+});
+
 test('context controller pending same-state plans repeat exactly and unapplied replacements preserve the applied baseline', t => {
     const f = setup(t);
     f.register();

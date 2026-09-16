@@ -566,6 +566,38 @@ this phase's evidence. The feature neither generalizes the current two-repositor
 adapter/build profiles nor provides automatic merging, agent launching or stronger
 unattended containment.
 
+### Review follow-up: superseded-plan reselection, 2026-09-16
+
+The independent Phase 1-3 review identified an A-to-B-to-A preparation defect.
+The legacy path persisted a superseded plan as active and could no longer apply
+it; the new context path rejected the inconsistent registry before saving.
+The legacy assignment pattern predates the declared-context feature.
+
+Reproduction was added before changing implementation. All three disposable cases
+failed as predicted: legacy apply reported `Plan was superseded or is not the active
+approval`; normal and metadata-only context preparation reported `Context active
+plan registry is inconsistent`.
+
+Both preparation paths now use the same guarded activation helper. It requires
+eligible pending/superseded progress without receipts, revalidates an existing
+plan's immutable bytes/packets and round, and only then supersedes the current
+pending choice and activates the selected one. Completed, applying and partial
+progress, receipt-bearing entries and damaged approvals are refused without changing
+either registry entry. Plan IDs/contents remain unchanged; no import occurs until
+an explicitly approved apply.
+
+The focused post-fix run passed 20 named cases: the three reselection cases,
+activation/receipt protection, damaged-plan refusal, and related current replay,
+metadata-only, partial-apply and journal/lost-receipt recovery cases. TAP reports
+23 entries because three unmatched files are also counted; those are not extra
+exercised cases. The earlier 156-case run remains historical evidence, not a claim
+that the full suite was rerun after this fix.
+
+No live task record was inspected or repaired. Broader Phase 4 wrapper/orphan-lock
+integration remains pending. The other review observations (source-unavailable
+diagnostics, snapshot-recency preference and validation-cache scaling) were not
+changed as part of this fix.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is
