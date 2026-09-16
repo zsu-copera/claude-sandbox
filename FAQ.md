@@ -98,8 +98,9 @@ integration decision, not an automatic side effect of importing instructions.
 
 **How do I bring in external review findings without losing the agent's work?**
 For the normal workflow, ask the outside agent to use `OPERATOR.md` and the registered
-task's `send` command. It prepares one plan, explains the inputs/destinations and
-applies that exact plan after your chat approval.
+task's `send` command. It prepares one plan and explains the inputs/destinations.
+With a delegated operator, the human-facing ticket lead receives your approval
+and executes that exact plan; the operator helper does not approve or apply it.
 
 Commit the selected brief documents outside the sandbox, export a packet, preview it,
 then apply it with the previewed target HEAD while the agent is stopped.
@@ -220,6 +221,31 @@ Nothing automatically. It creates a local, unreviewed audit package from the sto
 sandbox's committed work. It does not check out, merge or push that work into the
 external source repos. Dirty work or unsupported LFS artifacts must be addressed
 explicitly rather than silently omitted.
+
+**Should the reviewer write findings directly into the shared Documentation checkout?**
+No. The ticket lead is the sole host-checkout/Git writer; even uncommitted reviewer
+edits can collide. Reviewers return findings or use private artifacts outside the
+checkout. The lead incorporates and commits the record. Use
+[two-pass review](OPERATOR.md#independent-review-in-two-passes) to separate the initial
+technical assessment from the later narrative/scope check without stripping required
+domain facts or mandatory instructions.
+
+**Can an operator agent authorize its own apply?**
+No. Only the designated human's approval of the exact plan authorizes execution.
+The default delegated operator prepares/collects; the human-facing lead executes
+apply after receiving that approval directly. A dedicated operator session may
+instead receive the human's approval directly under an explicitly chosen route.
+A plan ID or agent-authored approval message does not authenticate the human.
+
+**Does a committed handoff log replace transcript review?**
+No. The lead's sanitized ledger indexes proposals, human approvals, receipts,
+collections and review outcomes. Raw session/tool evidence remains private and
+must be captured/retrieved for the actual CLI/setup. Controller state survives
+workspace reset and CLI volumes may retain history, but neither establishes that
+a complete transcript was captured. Follow the
+[pre-run evidence gate](OPERATOR.md#before-a-pilot-run-establish-execution-evidence);
+do not copy entire auth volumes, commit raw transcripts or claim unavailable
+evidence was reviewed.
 
 **An import was interrupted. Should I delete its Git locks?**
 No. Use the tool's `recover` operation with the original packet and current expected

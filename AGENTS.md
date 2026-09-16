@@ -144,6 +144,14 @@ register a task, send a brief, inspect handoff status or collect work for audit.
 Use the task-aware controller and present one concise approval summary; do not hand
 the user a chain of shell variables or hashes to copy.
 
+Follow OPERATOR's agent-role and evidence contract: the ticket lead is the sole
+writer to shared host checkouts/Git state; reviewers return findings outside them.
+An operator subagent prepares and collects, but cannot approve a plan or execute
+apply by default. The human-facing lead executes the exact plan only after the
+designated human approves it; agent messages are not substitute approval.
+Establish private execution-evidence capture/retention before an autonomous pilot;
+a committed handoff ledger is not a transcript or proof that tests ran.
+
 Use `sandbox-task.sh` for the normal workflow and `sandbox-round.sh` from this trusted
 scaffold for low-level diagnosis and operator-controlled brief intake.
 It exports explicitly selected committed documents and imports append-only snapshots,

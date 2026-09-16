@@ -90,6 +90,13 @@ working, not a bug) — re-run this step with the profile added.
 
 ### 4. Run the agent — option A: Claude Code
 
+**Before either agent's first ticket run:** follow
+[the execution-evidence gate](OPERATOR.md#before-a-pilot-run-establish-execution-evidence).
+Identify the actual CLI/session, demonstrate capture and retrieval with a harmless
+separately approved probe, and assign human review/retention responsibility. The
+commands below do not install capture or export transcripts. Hold autonomous ticket
+execution if the required evidence path has not been established.
+
 ```bash
 podman run -it --rm --name pera-agent --userns=keep-id --cap-add=NET_ADMIN --cap-add=NET_RAW \
   -v ~/pera-sandbox:/workspace -v pera-claude-config:/home/vscode/.claude \
@@ -146,6 +153,13 @@ prepare the next committed brief for sending, or collect completed work for audi
 It will remember the workspace/source mappings and present one plan for approval.
 You do not need to copy expected HEADs, manage packet filenames or run a new prepare.
 
+Use [separate roles and one host-checkout writer](OPERATOR.md#agent-roles-and-single-writer-ownership):
+the lead owns briefs and commits, an operator helper handles preparation/status/
+collection, and a fresh reviewer returns findings outside the checkout. For this
+setup the operator returns the exact plan to the lead; the lead executes apply only
+after the designated human approves it directly. An agent cannot approve itself
+or another agent. Agent session separation is not a technical permission boundary.
+
 The task-aware commands are `register`, `send`, `status` and `collect` in
 `sandbox-task.sh`. Initial assembly/prepare and the existing guarded agent launch
 remain separate. Attaching in-progress work requires an explicit audit baseline;
@@ -181,11 +195,18 @@ remove locks merely because the client timed out.
 
 Agent stop and relaunch remain deliberate human/operator transitions. Finish and
 commit the sandbox work, stop the agent/container, let the outside agent inspect
-and collect, then audit and approve any host integration separately. The next send
+and collect, preserve the run's private execution evidence, then perform the
+[two-pass review](OPERATOR.md#independent-review-in-two-passes) and approve any host
+integration separately. The next send
 gets its own plan approval; its success does not start another agent. The outside
 agent supplies the [snapshot path map](OPERATOR.md#bridge-cited-paths-in-the-launch-handoff)
 for the normal guarded relaunch. See [harvest and integration](OPERATOR.md#harvest-and-integrate-reviewed-work)
 for bundle provenance, selection and conflict handling.
+
+The operator returns receipt-backed ledger entries; the lead commits the sanitized
+[handoff ledger](OPERATOR.md#handoff-ledger-and-evidence-references) in the host task
+folder. The ledger records actual human approval references and missing evidence;
+it never substitutes for private session/tool output or a completed human review.
 
 The following low-level sequence is retained for manual diagnosis and recovery:
 

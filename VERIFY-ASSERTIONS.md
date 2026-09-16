@@ -637,6 +637,35 @@ The non-blocking review observations about source-unavailable diagnostics,
 snapshot-recency preference and validation-cache scaling remain follow-ups.
 The combined run was not a latency benchmark identifying their runtime cost.
 
+### Pre-pilot agent operating contract, 2026-09-16
+
+Subsequent ticket-lead feedback prompted a documentation-only refinement in
+`OPERATOR.md`, linked from the startup guides and scaffold agent guidance:
+one ticket lead writes the shared host checkouts, the operator helper prepares
+and collects, and a fresh reviewer returns findings outside those checkouts.
+The reviewer preserves a first technical assessment before a second pass with
+the brief/rationale; essential requirements and mandatory instructions are not
+withheld merely because they reside in documentation.
+
+Only the designated human can approve the exact plan. The default delegated
+workflow keeps apply with the human-facing lead rather than relaying an agent's
+approval claim through the operator. The lead also commits the sanitized ledger
+of actual approval references, receipts and outcomes. Separate sessions and this
+charter do not add OS permissions or human-authentication enforcement.
+
+Before the autonomous pilot, capture and retrieval of execution evidence must
+be demonstrated for the chosen CLI/setup with a separately approved harmless
+probe. The lead retains selected private session artifacts and records human
+review and evidence gaps. This is a procedural gate: transcript capture/export,
+reset prevention and role enforcement were not implemented in the controller or
+launchers. A ledger is not a transcript; persistent CLI-config volumes are not
+proof of complete or tamper-proof run evidence.
+
+No pilot, logging probe, session export or transcript review was performed by
+this documentation change. JWA-2905 still requires task-specific preflight,
+human operation approvals and the evidence demonstration before its first run.
+The successful Phase 4 fixture evidence above is unchanged.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is

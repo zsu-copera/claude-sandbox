@@ -86,6 +86,15 @@ The preferred operator is now the **outside agent**, using task registration,
 expected HEADs. See [OPERATOR.md](OPERATOR.md). The low-level commands remain available
 for diagnostics and recovery; the guarded agent launch is unchanged.
 
+For agent-operated ticket work, the lead is the sole writer to shared host checkouts,
+the operator helper prepares/collects, and fresh reviewers return findings outside
+those checkouts. Only the designated human approves the exact apply plan; the
+human-facing lead executes it. Follow OPERATOR's
+[roles](OPERATOR.md#agent-roles-and-single-writer-ownership),
+[two-pass review](OPERATOR.md#independent-review-in-two-passes) and
+[pre-run evidence gate](OPERATOR.md#before-a-pilot-run-establish-execution-evidence).
+These are operating rules, not newly enforced controller permissions.
+
 Each handoff must account for required context and shared write-back documents.
 The optional private `--handoff` contract carries declared documents forward and
 binds committed-version observations and handling decisions to an approval plan.
@@ -196,6 +205,12 @@ commits, uncommitted working-tree changes, build caches, login, and session tran
 persist. Restart anytime with the same command; `run-agent --continue` resumes the previous
 conversation (arguments pass through to `claude`). If you stop mid-task, prefer
 `--continue` over a fresh session so the agent keeps its context.
+
+Persistent CLI state is not an independently retained audit package. Establish
+capture/retrieval for the actual session and preserve selected private execution
+evidence before reset or cleanup; `collect` does not export transcripts. Do not
+copy the entire auth/config volume or treat the committed handoff ledger as a
+replacement for execution evidence.
 
 ### 4b. GitHub Copilot CLI variant
 

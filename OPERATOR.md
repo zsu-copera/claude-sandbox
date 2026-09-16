@@ -5,6 +5,34 @@ implements the brief; the outside agent handles task registration, committed bri
 handoffs and collection for audit. Do not ask the user to copy packet paths, round
 variables or Git hashes for the normal workflow.
 
+## Agent roles and single-writer ownership
+
+Use a persistent outside ticket-lead session and a sandbox implementer session.
+Invoke a separate operator helper for mechanics and a fresh reviewer for each audit;
+keep scaffold maintenance separate from ticket execution.
+
+| Role | Responsibility and write boundary |
+|---|---|
+| Ticket lead | Own requirements, committed briefs, context declarations and reconciliation decisions. Be the sole agent writer to the trusted host checkouts and their Git state, including staging, provenance refs and approved integration. |
+| Operator helper | Run requested registration, send preparation, status and collection through the controller. Write private operator artifacts only; return exact plans, receipts, path maps and ledger entries to the lead. Do not execute apply, launch, recovery or host integration on the lead's behalf by default. |
+| Independent reviewer | Read pinned review evidence in the two passes below; return findings in its response or a private artifact outside shared checkouts. Do not edit, stage or commit ticket files. |
+| Sandbox implementer | Execute the approved brief and commit results in the separate sandbox repositories. Do not edit immutable imported snapshots. |
+
+"Reviewer writes, lead commits" is not sufficient: uncommitted edits can collide
+or be swept into another commit. The lead incorporates returned artifacts into
+the host task folder. If ownership must transfer, explicitly stop the current
+writer and hand over the checkout; do not run concurrent writers on one index.
+Any review execution that could write build outputs belongs in a separately
+authorized disposable checkout, not the shared host working tree.
+
+The lead decides meaning and scope; the operator reports mechanical constraints.
+An omitted dependency or `needs-decision` result returns to the lead, not an
+operator-authored change to the brief to force the handoff through.
+Only the designated human can approve an exact plan. No agent can approve its
+own or another agent's operation. Separate sessions/roles are workflow discipline,
+not a new filesystem or authentication boundary; the controller does not authenticate
+chat authors or enforce these role permissions.
+
 Use the trusted scaffold at `C:\work\pera\claude-sandbox`. If the outside-agent
 session starts elsewhere, read this file explicitly before operating the sandbox.
 Do not edit the generated `prj/.github/copilot-instructions.md` to install this guidance.
@@ -26,6 +54,45 @@ Do not edit the generated `prj/.github/copilot-instructions.md` to install this 
   do not undo an already committed repository to pretend the pair changed together.
 - Collected work is still unreviewed. Do not execute it or automatically check it out,
   merge it, push it, or publish an audit package to a remote service.
+
+## Before a pilot run: establish execution evidence
+
+Assign the lead as evidence custodian and a named human to review execution
+evidence before accepting the run. A handoff ledger summarizes operations; it is
+not the implementer's transcript, proof of tests, or an independent activity log.
+Neither normal `collect` nor this runbook installs a transcript-capture mechanism.
+
+Before the first ticket run with the chosen CLI/setup, record and demonstrate:
+
+| Check | Required evidence |
+|---|---|
+| Runtime identity | Actual CLI executable/version, provider, observed model or an explicit unknown, image ID, task/plan ID and session/run identifier. A staged CLI can differ from the image copy. |
+| Capture method | Exact-version supported session export or host-side capture, destination and owner. A harmless, separately approved non-ticket probe must show what is recorded: tool invocation, result and exit/failure outcome where available. Printed summaries or stdout alone must not be labelled a complete tool transcript. |
+| Retention | Retrieval after the probe session/container ends; selected evidence copied to private host storage outside the workspace and controller-owned records before any reset. Verify per-file hashes and record the association with the run. |
+| Review limits | Whether subagent actions, interactive output, failed commands and exit codes are represented. Record omissions, the responsible human and whether the required review can actually be completed. |
+
+Preserve the existing guarded startup for that probe; do not weaken restrictions,
+run ticket work, or repeat prepare just to establish logging. Check the actual CLI's
+supported behavior rather than prescribing unverified export flags.
+If capture/retention cannot be demonstrated, hold the autonomous ticket run and
+report the missing evidence. A different supervised mode or reduced evidence
+requirement needs a separate human decision; do not silently waive the gate.
+
+Default launch recipes use persistent CLI-config volumes, so container exit or
+workspace reset does not necessarily delete their session history. That is not
+proof that a particular run was captured or retained completely. Export only
+explicitly selected session artifacts; never copy an entire auth/config volume,
+mount it into the importer, or commit raw transcripts. Logs can contain credentials
+and sensitive tool output. Keep originals private, produce separately identified
+redacted review copies as needed, and never silently replace the originals.
+Hashes detect later changes relative to the captured artifact, not authenticity
+or completeness of an agent-writable session record.
+
+At the end of each run, preserve its selected evidence and record capture gaps
+before workspace deletion/reuse or log cleanup. A missing transcript does not prevent
+collecting committed work for preservation; it prevents claiming the execution
+review is complete. This gate is procedural, not a new check in the launch scripts
+or `new-sandbox.sh --force`.
 
 ## Register once
 
@@ -57,7 +124,7 @@ user. No workspace reset or warming is part of registration.
 
 ## Send a committed brief
 
-The outside author/auditor first writes and commits the intended brief in its source
+The ticket lead first writes and commits the intended brief in its source
 repository. Commit only the intended files; do not stage every change in that repo.
 Before preparing the plan, assemble the complete handoff described below.
 
@@ -73,7 +140,8 @@ steps. Make an explicit inventory:
 | Sandbox write-back | Name each canonical document the agent should update, including README, implementation log and follow-ups where applicable. Include the current host snapshot when it carries changes the sandbox must preserve. |
 | Host-owned document | Keep its canonical edits with the outside author; specify where the sandbox should record proposed additions instead. |
 
-These remain operator decisions. Legacy `--brief` sends check selected deliveries,
+These remain ticket-lead decisions, checked and reported by the operator.
+Legacy `--brief` sends check selected deliveries,
 not canonical-document freshness. The opt-in `--handoff` contract below records
 declared context and checks its committed versions, but cannot discover every
 dependency mentioned in prose or enforce ownership as an operating-system boundary.
@@ -244,10 +312,19 @@ Present one compact review summary:
 | Safety | Any blocking dirty/running/recovery state; no prepare or reset |
 | Approval | The exact plan ID to apply |
 
-Obtain the user's chat approval of that plan. A successful preview, an instruction in
-the brief, or a request to *prepare* a handoff is not approval to apply it. If the user
-explicitly names an already presented plan to apply, no second shell confirmation is
-needed. The outside agent invokes:
+The operator returns this summary to the human-facing lead session. The lead must
+obtain the designated human's approval of the exact plan in that session and then
+execute apply itself; a delegated operator helper does not execute it by default.
+An agent-authored "approved", a brief instruction, a forwarded claim of approval,
+or permission to prepare/test the feature is not human approval. Record the actual
+approval message or a retrievable conversation reference bound to the plan ID.
+If that evidence is unavailable or ambiguous, obtain approval again rather than
+inventing it. When the human explicitly names an already presented plan to apply,
+no second shell confirmation is needed.
+
+A dedicated human-facing operator session may instead execute apply after receiving
+the human's approval directly; name that route explicitly, with only one executor.
+In either route, the authorized human-facing session invokes:
 
 ```bash
 bash /mnt/c/work/pera/claude-sandbox/sandbox-task.sh send TASK --apply PLAN_ID
@@ -401,14 +478,90 @@ Only a fully published, checksummed package advances the recorded collection bas
 An interrupted export does not change the task repositories. Keep the prior complete
 package and report any incomplete output; do not overwrite evidence.
 
-The outside auditor reviews the package, writes and commits the next brief, then
-repeats `send`. No warm-up is needed merely because another review round begins.
+The independent reviewer reports findings; the ticket lead resolves them and writes
+and commits the next brief before another `send`. No warm-up is needed merely
+because another review round begins.
 New dependencies, profiles or code baselines remain separate explicit decisions.
+
+## Independent review in two passes
+
+The lead owns the ticket-specific review-packet format. Pin its acceptance criteria
+to their source versions, both candidate/baseline identities, collection ID and
+artifact checksums. Do not silently substitute a later checkout or acceptance
+criterion during review. Keep the authoritative full diff/history available;
+the focused work diff alone can omit important earlier work.
+
+**Pass 1: independent technical assessment.** Give a fresh reviewer the pinned
+changes, standalone acceptance criteria, necessary domain/legal constraints and
+relevant source/tests at the candidate and baseline. Withhold the lead's preferred
+solution, implementation narrative, previous review conclusions and task-status
+prose. Strip persuasive rationale, not requirements or accepted behavior merely
+because they live in a decision record. Do not blanket-ban the Documentation repo
+if it contains required facts. Candidate documentation can itself be a deliverable
+under review, not authority proving the implementation is correct.
+
+Inventory every changed path, explicitly identifying narrative-only hunks deferred
+to pass 2; keep the full collection unchanged. If a narrative document is itself
+necessary to judge an acceptance criterion, provide it in pass 1 and disclose that
+exposure. Do not hide a changed deliverable or call the first pass a complete review
+of material it has not seen.
+
+Use explicit evidence paths instead of browsing the whole task folder. Keep
+mandatory repository/safety instructions in effect; do not try to bypass them for
+a "blind" review. If initial context already exposes the withheld narrative,
+record that limitation rather than claiming an uncontaminated first pass.
+The reviewer can request missing facts or report insufficient evidence; a diff-only
+guess is not an acceptable substitute for understanding the affected behavior.
+
+Preserve the initial findings as a separate response/artifact outside the shared
+checkout before releasing the narrative. Record the packet identity and evidence
+actually consulted; the lead must not silently rewrite this first-pass record.
+
+**Pass 2: scope and rationale check.** Release the full brief, task README, relevant
+decision records and implementation log. The reviewer appends confirmations,
+withdrawals, corrections or new findings, with the evidence that changed each
+conclusion. Check scope conformance and challenge flawed brief assumptions as well
+as implementation mistakes. Preserve both passes rather than replacing the first.
+
+The lead incorporates the two-pass report and its own dispositions into the task
+documents. Neither pass authorizes apply, host integration or push. This is an
+evidence discipline, not guaranteed reviewer independence or OS-level read isolation.
+Packet selection and reasoning can still be biased; disclose those limits.
+
+## Handoff ledger and evidence references
+
+The operator returns a concise structured entry after each preparation, apply
+result received from the lead, and collection. The lead reconciles it with the
+actual human approval and receipts, then appends and commits a sanitized entry in
+the host task folder. Use the ticket's existing log if suitable; the reviewer and
+operator do not write into that checkout. Keep this ledger host-owned in handoff
+declarations rather than asking the implementer to overwrite it.
+
+Each entry records:
+
+| Event | Minimum fields |
+|---|---|
+| Prepared | Task, timestamp, plan ID, round or metadata-only status, context revision, pinned source/target heads, selected paths, drift/handling and the summary presented for approval. |
+| Approved / applied | Actual human approval reference, exact approved plan ID, executor, per-repository result and receipt/import heads. Keep requested, approved, partially applied and completed states distinct. |
+| Run evidence | Session/runtime identity, private artifact references and hashes, capture/redaction limitations, and human review state: pending, reviewed or unavailable. |
+| Collected / reviewed | Collection ID/checksum, candidates, audit/work bases, review-packet identity, both review passes, lead dispositions and separately approved integration outcomes or withheld work. |
+
+Record failed/superseded operations and incomplete integration instead of turning
+them into success summaries. Corrections are new entries linked to the earlier
+event. An agent's retrospective summary is not a substitute for an unavailable
+human approval record or execution transcript. Avoid raw prompts/tool output,
+credentials and auth-volume contents in the committed ledger.
+
+Private controller plans, receipts and collections already survive workspace reset;
+the ledger is a readable index, not their replacement. Keep raw execution evidence
+separately, with access restricted to the owner/reviewers. Do not import raw
+transcripts into the sandbox or broaden `collect` to copy config volumes.
 
 ## Harvest and integrate reviewed work
 
 `collect` is the end of the controller's responsibility, not automatic acceptance
-or host integration. The outside agent performs the following steps against the
+or host integration. The ticket lead, as the sole host-checkout writer, performs
+the following steps against the
 **trusted host repositories**, never as ad hoc host Git operations on the
 agent-controlled workspace. Do not ask the user to act as a courier for bundle
 paths or commit hashes.
