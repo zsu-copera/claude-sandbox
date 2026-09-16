@@ -593,10 +593,49 @@ metadata-only, partial-apply and journal/lost-receipt recovery cases. TAP report
 exercised cases. The earlier 156-case run remains historical evidence, not a claim
 that the full suite was rerun after this fix.
 
-No live task record was inspected or repaired. Broader Phase 4 wrapper/orphan-lock
-integration remains pending. The other review observations (source-unavailable
+No live task record was inspected or repaired. At that point, broader Phase 4
+wrapper/orphan-lock integration remained pending. The other review observations (source-unavailable
 diagnostics, snapshot-recency preference and validation-cache scaling) were not
 changed as part of this fix.
+
+### Phase 4 closeout and next pilot, 2026-09-16
+
+The combined `verify-tasks.sh --integration` run completed successfully after the
+superseded-plan fix. Its source-hash guard covered the same helper/test bytes
+throughout the run. This is a single combined run, distinct from the earlier
+targeted and phase-specific evidence:
+
+| Component | Result |
+|---|---|
+| Task Node cases | 161/161 passed; approximately 450 seconds for this portion. |
+| Legacy CLI wrapper | Passed registration, paired/single-repository sends, no-op/replay, collection, dirty/running and retained-input guards. |
+| Context-aware CLI wrapper | Passed private intake, v2 opt-in, carried declarations, decisions, metadata-only collection, canonical write-back and non-rewinding replay. |
+| Orphan-controller lock | Passed intentional host-wrapper interruption: another operation was refused until the labelled orphan controller stopped, then status succeeded. |
+
+Both real CLI workflows now also exercise prepare A, prepare B, prepare A again:
+the original plan ID returns to pending, the replacement remains superseded,
+planning leaves the workspace unchanged and the selected plan can be applied.
+The legacy tamper scenario compares the entire saved plan registry rather than a
+fixed plan count. The runner announces each major component so its progress is
+visible during the lengthy sequential container scenarios.
+
+The combined run and its owned-fixture cleanup completed with exit zero. No live
+task state, application/source repository, warmed workspace, agent configuration,
+image build or prepare was changed. This closes the planned operator-feature
+regression phase; it is not application acceptance, complete P/A/G/X containment
+coverage, or proof that the broader sandbox security backlog is resolved.
+
+EEP-24 is finished for the time being. The user designated **JWA-2905 Legislative
+work** as the next supervised live pilot. It was not registered, imported or
+launched by this closeout. Pilot setup must separately establish its actual
+source refs/briefs, retained-workspace branches, explicit audit baselines and
+required warmed profiles. Do not reuse EEP-24's registration or infer that its
+agency preparation satisfies the new task. Any workspace change or dependency
+top-up remains an explicit decision; no reset or re-warm is implied.
+
+The non-blocking review observations about source-unavailable diagnostics,
+snapshot-recency preference and validation-cache scaling remain follow-ups.
+The combined run was not a latency benchmark identifying their runtime cost.
 
 ## Deliberately not asserted
 

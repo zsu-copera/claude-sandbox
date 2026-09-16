@@ -60,6 +60,25 @@ if (mode === 'setup') {
         assert.deepEqual(tree(f.workspace), before.workspace);
         assert.deepEqual(tree(f.source), before.source);
         assert.deepEqual(tree(docsSource), before.documentation);
+    } else if (mode === 'context-alternative') {
+        write(root, 'handoff-first-choice.json', fs.readFileSync(path.join(root, 'handoff.json')));
+        const handoff = read('handoff.json');
+        handoff.documents[0].reason = 'Alternative pre-approval context';
+        write(root, 'handoff.json', JSON.stringify(handoff));
+    } else if (mode === 'context-restore-choice') {
+        write(root, 'handoff.json', fs.readFileSync(path.join(root, 'handoff-first-choice.json')));
+    } else if (mode === 'context-check-reselected') {
+        const first = read('context-plan.json');
+        const alternative = read('context-alternative-plan.json');
+        const reselected = read('context-reselected.json');
+        const record = read('operator-state/pera-sandbox-tasks/TASK-1/record.json');
+        assert.notEqual(first.planId, alternative.planId);
+        assert.equal(reselected.planId, first.planId);
+        assert.equal(record.activePlan, first.planId);
+        assert.equal(record.plans[first.planId].status, 'pending');
+        assert.equal(record.plans[alternative.planId].status, 'superseded');
+        assert.equal(record.lastContext, null);
+        assert.deepEqual(tree(f.workspace), read('before.json').workspace);
     } else if (mode === 'context-prior-work') {
         commit(f.target, 'src/original.txt', 'Previously collected implementation\n');
     } else if (mode === 'context-metadata') {
@@ -177,6 +196,14 @@ if (mode === 'setup') {
         assert.equal(plan.status, 'approval-required');
         assert.equal(plan.round, 'R1');
         assert.equal(plan.planId, read('repeat.json').planId);
+        const alternative = read('alternative-plan.json');
+        const reselected = read('reselected.json');
+        const record = read('operator-state/pera-sandbox-tasks/TASK-1/record.json');
+        assert.notEqual(alternative.planId, plan.planId);
+        assert.equal(reselected.planId, plan.planId);
+        assert.equal(record.activePlan, plan.planId);
+        assert.equal(record.plans[plan.planId].status, 'pending');
+        assert.equal(record.plans[alternative.planId].status, 'superseded');
         assert.equal(plan.prepares, false);
         assert.equal(plan.launchesAgent, false);
     } else if (mode === 'check-first') {
@@ -227,6 +254,7 @@ if (mode === 'setup') {
     } else if (mode === 'clear-dirty') {
         write(f.target, 'src/original.txt', 'Committed sandbox implementation\n');
     } else if (mode === 'tamper-input') {
+        write(root, 'tampered-before-plans.json', JSON.stringify(read('operator-state/pera-sandbox-tasks/TASK-1/record.json').plans));
         commit(f.target, 'sandbox-rounds/TASK-1/R1/README.md', 'Unexpected committed input edit\n');
         write(root, 'tampered-before.json', JSON.stringify(tree(f.workspace)));
     } else if (mode === 'check-refused-tamper') {
@@ -235,6 +263,6 @@ if (mode === 'setup') {
         assert.equal(status.status, 'blocked');
         assert.ok(status.inputIssues.some(issue => issue.repository === 'prj' && issue.roundPath.endsWith('/R1')));
         const record = read('operator-state/pera-sandbox-tasks/TASK-1/record.json');
-        assert.equal(Object.keys(record.plans).length, 2, 'Invalid retained input must not publish another plan.');
+        assert.deepEqual(record.plans, read('tampered-before-plans.json'), 'Invalid retained input must not alter the plan registry.');
     } else throw new Error(`Unknown fixture operation: ${mode}`);
 }

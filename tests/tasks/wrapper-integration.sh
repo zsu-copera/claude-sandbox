@@ -93,6 +93,11 @@ if [[ $context_only == 1 ]]; then
     fixture context-check-refusals
     bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-plan.json"
     plan=$(jq -er .planId "$root/context-plan.json")
+    fixture context-alternative
+    bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-alternative-plan.json"
+    fixture context-restore-choice
+    bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-reselected.json"
+    fixture context-check-reselected
     bash "$wrapper" send TASK-1 --apply "$plan" > "$root/context-applied.json"
     bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-unchanged.json"
     [[ $(jq -r .status "$root/context-unchanged.json") == unchanged ]]
@@ -120,7 +125,7 @@ if [[ $context_only == 1 ]]; then
     fixture context-before-replay
     bash "$wrapper" send TASK-1 --apply "$plan" > "$root/context-replay.json"
     fixture context-check-final
-    echo 'PASS context wrapper: private intake, v2 opt-in, carry-forward, exact plans, metadata-only collection and audited write-back.'
+    echo 'PASS context wrapper: private intake, v2 opt-in, plan reselection, carry-forward, metadata-only collection and audited write-back.'
     exit 0
 fi
 round_wrapper="$scaffold/sandbox-round.sh"
@@ -173,6 +178,8 @@ bash "$wrapper" register --config "$root/config.json" > "$root/registered-again.
 [[ $(stat -c %a -- "$XDG_STATE_HOME/pera-sandbox-tasks/TASK-1") == 700 ]]
 bash "$wrapper" send TASK-1 > "$root/plan.json"
 bash "$wrapper" send TASK-1 > "$root/repeat.json"
+bash "$wrapper" send TASK-1 --brief prj:briefs/second.txt > "$root/alternative-plan.json"
+bash "$wrapper" send TASK-1 > "$root/reselected.json"
 fixture check-plan
 plan=$(jq -r .planId "$root/plan.json")
 bash "$wrapper" send TASK-1 --apply "$plan" > "$root/applied.json"
@@ -222,4 +229,4 @@ expect_failure bash "$wrapper" send TASK-1 --apply "$plan"
 grep -q 'Retained handoff integrity' "$root/failure.err"
 bash "$wrapper" status TASK-1 > "$root/input-status.json"
 fixture check-refused-tamper
-echo 'PASS task wrapper integration: attachment, exact plans, current replay validity, retained-input guards, paired/single sends, collection and dirty/running guards.'
+echo 'PASS task wrapper integration: attachment, plan reselection, current replay validity, retained-input guards, paired/single sends, collection and dirty/running guards.'

@@ -67,6 +67,7 @@ source_snapshot() {
         "$scaffold"/tests/rounds/*.js "$scaffold"/tests/rounds/*.cjs "$scaffold"/tests/rounds/*.sh
 }
 before=$(source_snapshot)
+echo 'Running task Node cases.'
 podman run --rm --pull=never --name "$name" --label "io.pera.task-tests=$nonce" \
     --network=none --cap-drop=all --security-opt=no-new-privileges --userns=keep-id \
     --http-proxy=false --unsetenv-all --env PATH=/usr/local/bin:/usr/bin:/bin \
@@ -86,8 +87,11 @@ export TMPDIR="$PWD"
 exec node "$@" /tests/tasks/*.test.js' tasks "${test_args[@]}"
 [[ $(source_snapshot) == "$before" ]] || { echo 'Source changed during tests; results do not verify a stable snapshot.' >&2; exit 1; }
 if [[ $integration == 1 ]]; then
+    echo 'Running legacy task wrapper integration.'
     bash "$scaffold/tests/tasks/wrapper-integration.sh" --image "$image"
+    echo 'Running context-aware task wrapper integration.'
     bash "$scaffold/tests/tasks/wrapper-integration.sh" --image "$image" --context-only
+    echo 'Running orphan-controller lock integration.'
     bash "$scaffold/tests/tasks/lock-integration.sh" --image "$image"
     [[ $(source_snapshot) == "$before" ]] || { echo 'Source changed during integration; rerun a stable snapshot.' >&2; exit 1; }
 fi
