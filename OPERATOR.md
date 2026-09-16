@@ -73,10 +73,10 @@ steps. Make an explicit inventory:
 | Sandbox write-back | Name each canonical document the agent should update, including README, implementation log and follow-ups where applicable. Include the current host snapshot when it carries changes the sandbox must preserve. |
 | Host-owned document | Keep its canonical edits with the outside author; specify where the sandbox should record proposed additions instead. |
 
-These are operator decisions, **not new CLI fields or controller-enforced ownership
-rules**. Today `send` compares selected source blobs with previous deliveries;
-`status` checks retained-input integrity. Neither establishes that an unselected
-canonical document is current, nor discovers every dependency mentioned in prose.
+These remain operator decisions. Legacy `--brief` sends check selected deliveries,
+not canonical-document freshness. The opt-in `--handoff` contract below records
+declared context and checks its committed versions, but cannot discover every
+dependency mentioned in prose or enforce ownership as an operating-system boundary.
 
 Use the named source branch and previous collection/host history to identify the
 versions involved. A file on another branch is not available merely because it
@@ -97,6 +97,90 @@ the latest brief made everything current. Never edit a prior round's snapshot.
 EEP-24 exposed both failure modes: a required harness was absent from the clone,
 and a shared README was not sent even though the host had amended it. Sending the
 amended implementation log alone did not protect the README's independent changes.
+
+### Context-aware handoffs: explicit opt-in
+
+For a task that should retain and monitor its declared context, prepare a private
+handoff file and use:
+
+```bash
+bash /mnt/c/work/pera/claude-sandbox/sandbox-task.sh send TASK \
+  --handoff /absolute/private/handoff.json
+```
+
+The outside operator supplies the actual absolute Linux path. The input must be
+a current-user-owned mode-600 regular file, with one hard link, in an owned mode-700
+directory. Symlinked paths are unsupported. Keep it outside the workspace, both
+source repositories, the scaffold and the controller-state tree. The wrapper
+captures at most 1 MiB and requires exactly one JSON object; it does not expose the
+input directory to the sandbox or reread this editable file when applying a plan.
+
+All top-level fields are required:
+
+```json
+{
+  "version": 1,
+  "briefs": {
+    "prj": [],
+    "Documentation": ["review.md"]
+  },
+  "documents": [
+    {
+      "repository": "Documentation",
+      "path": "README.md",
+      "role": "shared",
+      "reason": "Both sides update the task status"
+    }
+  ],
+  "retire": [],
+  "decisions": []
+}
+```
+
+`briefs` replaces the round's brief selection. `documents` adds or explicitly
+updates persistent declarations: omitting a previously declared README does not
+drop it. Roles are `reference`, `shared` and `host-owned`, each with a nonblank
+reason. To retire a declaration, provide its exact `repository`, `path` and
+`reason` in `retire`; retirement never deletes files, imports or historical evidence.
+The effective selected inputs include active declarations as well as this round's
+briefs. Existing committed-document type/count/size limits still apply.
+
+An exact repeat of the last applied handoff can recognize its already completed
+retirements. When authoring a different handoff, remove those completed retirement
+requests; an unknown declaration is not silently treated as retired.
+
+Shared source/canonical differences require a per-handoff decision containing
+`repository`, `path`, `action` and `reason`. Actions are `reconcile-in-sandbox`,
+`retain-sandbox`, `defer-to-host` and, only for an absent canonical document,
+`initialize-from-source`. They describe the next agent's handling; **send/apply
+never executes those canonical-file edits**. A reference may be absent canonically
+if its imported snapshot supplies it. Missing or unsupported required source inputs
+cannot be waived by a write-back decision.
+
+A `needs-decision` result has no applicable plan ID. Resolve its named documents
+and prepare again; it does not authorize apply or advance the context baseline.
+Invalid input and inspection errors are failures, not missing-document defaults.
+A valid `approval-required` result binds the declarations, observations, decisions
+and exact inputs. Show them in the approval summary before applying its plan ID.
+
+The first successfully prepared context plan upgrades private task metadata to
+version 2; the registration configuration and repositories stay unchanged.
+Resolve existing pending/partial legacy sends before opting in. Subsequent new
+sends require `--handoff`, so a bare send or `--brief` cannot bypass the declared
+set. Older controller code cannot operate on the upgraded record. Do not downgrade
+by restoring an old record over newer approvals/collections; retain a compatible
+controller or make a forward fix. Opt-in for a real task is a deliberate operator
+action, not part of installing the feature.
+
+Changed declarations or decisions can require approval even when no new input
+bytes need importing. Such a context-only plan has `round: null`; applying it
+advances the context revision without creating an R-directory or moving the last
+import round, execution heads or collection heads. It still needs chat approval.
+Unrelated source commits alone do not create imports or context revisions.
+
+The reusable contract accepts configured repository identifiers. The current
+controller still requires its existing `prj`/`Documentation` registration; this
+feature does not generalize workspace layout or build profiles.
 
 ### Carry a script as a document
 
@@ -121,14 +205,15 @@ evidence or explicitly report that the required artifact cannot yet be delivered
 
 ### Prepare and approve the exact selection
 
-Prepare the handoff:
+For an opted-in task, prepare with `--handoff` as above. For a legacy task:
 
 ```bash
 bash /mnt/c/work/pera/claude-sandbox/sandbox-task.sh send TASK
 ```
 
-The controller remembers the source mappings, selects the next unused round, exports
-committed inputs and previews the affected targets. Use its explicit `--brief` selector
+The controller remembers the source mappings, selects the next unused round when
+an import is needed, exports committed inputs and previews the affected targets.
+For a legacy send, use its explicit `--brief` selector
 when a new round uses different paths; never scan and import every changed Markdown file.
 `--brief REPO:RELATIVE_PATH` replaces the entire selection for that send, rather than
 appending to the configured defaults. Include each intended path explicitly.
@@ -136,7 +221,7 @@ Unchanged selected brief blobs must not create another round merely because a so
 branch received unrelated commits.
 
 The registered `briefs` list is a fixed starting default, not a moving "current round"
-pointer. Later rounds commonly need an explicit `--brief` selection that includes
+pointer. Later legacy rounds commonly need an explicit `--brief` selection that includes
 their supporting context and shared write-back snapshots. Do not create a new task
 or edit the private registration merely to change that selection.
 
@@ -163,6 +248,9 @@ bash /mnt/c/work/pera/claude-sandbox/sandbox-task.sh send TASK --apply PLAN_ID
 The controller, not the user, supplies the captured HEADs. It must use the pinned
 packets and image rather than silently refreshing the plan. A plan ID binds an exact
 operation; it is not a cryptographic proof of who approved it.
+If a source branch advances after preparation, apply still uses the approved
+snapshot rather than substituting the newer source. Prepare a new plan when the
+newer content is what the user actually wants.
 
 Report per-repository results and the generated round README paths. Supply those
 paths to the next sandbox session; a source brief existing somewhere in the clone
@@ -186,9 +274,16 @@ the agreed reconciliation policy. The snapshot itself remains unchanged.
 Unselected references are not refreshed: resolve and establish their availability
 at the original location rather than assuming that a relative link will work.
 
-Keep this map in the outside agent's handoff. Do not rewrite an existing round
+Context-aware results supply a map backed by the actual retained delivery; include
+that map in the outside agent's launch handoff. Legacy handoffs still need the
+operator to assemble it. Do not rewrite an existing round
 README to improve its wording: the importer checks its exact generated bytes as
 part of retained-input integrity.
+
+Returned `context.pathMap` paths are repository-relative. Resolve `snapshotPath`
+and `canonicalPath` using the row's `repository` under the current container's
+`/workspace`, not the host source checkout. `writeBack` reflects the approved
+handling, including host deferral of a shared document.
 
 An `unchanged` send or `already-applied` replay is not based only on stored receipts.
 The controller checks current branches/state, execution ancestry and each recorded
@@ -221,6 +316,22 @@ inputs; it is not a substitute for the task controller's approval and delivery c
 Committed input corruption can still be collected for audit instead of being hidden
 or reset merely to let another send proceed.
 
+For an opted-in task, also read the `context` report, separate from Git worktree
+health and immutable-input integrity. It compares each side's committed content
+with its own last fully applied context observation. A first observation is
+unbaselined; a different source and target do not prove which is newer. Legitimate
+sandbox-only write-back is visible, not silently classified as a broken import.
+Status does not advance that baseline, and replaying an old completed plan does
+not rewind the active context revision. Running or other non-clean states must
+not be presented as fresh alignment. A context report is not approval of another send.
+
+`context.observation: current` identifies the live status comparison.
+`captured-approval` identifies historical observations in plan/apply/collection
+summaries, not a fresh source inspection. A clean overall `ready` status can coexist
+with `context.status: changed`. Likewise, `context.status: unchanged` means unchanged
+since the applied observation, not necessarily equal source/canonical contents:
+an approved divergence can persist. Read the per-document drift and handling.
+
 For explicit canonical-document diagnosis, the outside agent can use the trusted
 `sandbox-round.sh inspect` with the registered workspace, repository and image,
 adding repeated `--path` arguments such as `--path README.md --path docs/task.md`.
@@ -237,8 +348,9 @@ masquerading as missing files.
 These are **committed-byte observations**, not automatic source/canonical
 comparison or synchronization. The trusted source helper can provide corresponding
 observations from a named source branch, ignoring uncommitted source edits.
-Normal task `status` and `send` are not yet wired to the declared-context contract;
-their existing behavior and the manual context/ownership decisions above still apply.
+Context-aware task commands use these observations for the declared set. Legacy
+task commands retain their existing behavior. Neither mode refreshes canonical files
+or establishes that undeclared references are current.
 
 Agent launch remains the existing `run-agent` or `run-copilot` workflow. This controller
 does not reopen a locked container or add automatic reviewer/model behavior.
@@ -260,6 +372,11 @@ post-handoff work diffs and Git bundles where there are new commits. The full di
 and history remain authoritative; a focused diff is not permission to ignore earlier
 uncollected work. Input-only commits are identified separately, and unexpected changes
 to imported inputs remain visible.
+
+Context-aware packages also bind the last fully applied context revision and its
+approved declarations/decisions. A metadata-only approval can therefore produce a
+new package even when both Git HEADs are unchanged. Canonical document drift remains
+collectable for audit; do not reset it to make the context report look aligned.
 
 Collection captures committed Git work, not ignored logs, session transcripts or
 proof that a test ran. Report the available evidence and missing evidence honestly;

@@ -501,10 +501,70 @@ all-container mount guard. No live EEP-24 registration, import, collection, agen
 run, image rebuild or prepare was performed; the full task-controller integration
 scenario was not rerun for this phase.
 
-**Still pending:** the `--handoff` interface, version-2 metadata and approval plans,
+**At phase-2 completion, still pending:** the `--handoff` interface, version-2 metadata and approval plans,
 automatic context comparison in task status/send, context-aware collection
 identity and generated handoff maps. Low-level observations do not establish
 handoff completeness or authorize canonical write-back by themselves.
+
+### Context-aware controller wiring (phase 3), 2026-09-16
+
+`sandbox-task.sh send TASK --handoff FILE` now captures a private, owned input
+outside the workspace, source repositories, scaffold and controller-state tree.
+Capture is bounded to 1 MiB and uses files rather than a large command-line JSON
+argument. The controller independently checks fatal UTF-8 decoding, a single JSON
+value and equality with the captured request before interpreting the handoff.
+Malformed JSON diagnostics do not echo the body; I/O failures remain explicit.
+
+A successfully prepared context plan upgrades private task metadata to version 2,
+without changing the closed version-1 registration config. Legacy tasks keep their
+previous behavior until explicit opt-in. Existing pending/partial legacy sends
+must be resolved first; opted-in tasks cannot bypass declarations with a bare send
+or `--brief`. The applied context is recorded as `lastContext: {revision, planId}`.
+Validation binds that pointer to the latest fully applied revision chain, not merely
+to an arbitrary historical plan with a valid digest.
+
+Context plans capture the effective declared set, both sides' observations,
+per-handoff handling, source packets and actual snapshot path mappings.
+Previously declared documents survive omission; exact replay of the last handoff's
+completed retirements remains idempotent, while unrelated unknown retirements fail.
+Missing decisions return a diagnostic without an applicable plan ID or baseline
+change. Source advancement after approval does not replace the pinned input.
+Reconciliation/initialization decisions remain guidance, never automatic edits.
+
+Metadata-only plans have `round: null` and advance context only, preserving Git
+heads, last import round, execution heads and collection heads. Version-2 collection
+identity includes `binding.context: {revision, planId}` and the corresponding approved
+provenance. Thus an unchanged Git candidate can still need a new audit package.
+Committed canonical drift remains collectable without consulting current source
+contents. Historical plan replay never rewinds the active context.
+
+`status.context` reports current per-document drift independently of workspace
+health and retained-input integrity. Plan/apply/collection context is explicitly
+labelled `captured-approval`, not a fresh source observation. The path map's
+write-back owner honors host deferral even when a document remains declared shared.
+These distinctions are documented in `OPERATOR.md`.
+
+Recorded evidence on the combined source:
+
+- The task-specific Node runner passed **156/156 named cases** in one invocation,
+  including the existing legacy behavior and the context-aware controller cases.
+- The actual `wrapper-integration.sh --image localhost/pera-sandbox --context-only`
+  scenario passed against disposable repositories and private fixture state. It
+  covered private file/path/permission/link/size guards, malformed UTF-8/NUL and
+  multi-value inputs, v2 opt-in, unchanged replay, captured-file mutation after
+  preparation, carried-forward README drift, decisions, imports and collection.
+- Its metadata-only case includes earlier committed work, so accidentally advancing
+  the execution/work base would be observable. It confirmed a new collection at
+  identical Git HEADs, retained work-base coverage, collectable canonical write-back
+  and non-rewinding historical replay.
+- Static assertions retain the known baseline: 21 passed, S7 unresolved, 2 skips.
+
+No live task was opted in, and no real application workspace, source branch, image,
+agent settings or warmed cache was changed. Broader phase-4 wrapper/orphan-lock
+integration and a separately authorized real-task rollout remain distinct from
+this phase's evidence. The feature neither generalizes the current two-repository
+adapter/build profiles nor provides automatic merging, agent launching or stronger
+unattended containment.
 
 ## Deliberately not asserted
 

@@ -1,13 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
-[[ $# == 2 || $# == 3 ]] || { echo 'Expected --image IMAGE [--observations-only].' >&2; exit 2; }
-[[ $1 == --image && -n $2 && $2 != -* ]] || { echo 'Expected --image IMAGE [--observations-only].' >&2; exit 2; }
+[[ $# == 2 || $# == 3 ]] || { echo 'Expected --image IMAGE [--observations-only|--context-only].' >&2; exit 2; }
+[[ $1 == --image && -n $2 && $2 != -* ]] || { echo 'Expected --image IMAGE [--observations-only|--context-only].' >&2; exit 2; }
 image=$2
 observations_only=0
+context_only=0
 if [[ $# == 3 ]]; then
-    [[ $3 == --observations-only ]] || { echo 'Unknown integration selector.' >&2; exit 2; }
-    observations_only=1
+    case "$3" in
+        --observations-only) observations_only=1;;
+        --context-only) context_only=1;;
+        *) echo 'Unknown integration selector.' >&2; exit 2;;
+    esac
 fi
 tests=$(realpath -e -- "$(dirname -- "${BASH_SOURCE[0]}")")
 scaffold=$(realpath -e -- "$tests/../..")
@@ -70,6 +74,55 @@ expect_failure() {
 }
 fixture setup
 export XDG_STATE_HOME="$root/operator-state"
+if [[ $context_only == 1 ]]; then
+    fixture context-inputs
+    PATH=/unavailable /bin/bash "$wrapper" send --help > "$root/context-help.out"
+    for flags in --brief --apply --handoff; do
+        expect_failure env PATH=/unavailable /bin/bash "$wrapper" send TASK-1 \
+            --handoff "$root/handoff.json" "$flags" invalid
+    done
+    bash "$wrapper" register --config "$root/config.json" > "$root/context-registered.json"
+    for input in empty multiple oversized permissive symlink hardlink utf8 nul; do
+        expect_failure bash "$wrapper" send TASK-1 --handoff "$root/handoff-$input.json"
+    done
+    expect_failure bash "$wrapper" send TASK-1 --handoff "$root/retained workspace/prj/README.md"
+    expect_failure bash "$wrapper" send TASK-1 --handoff "$root/external source/README.md"
+    expect_failure bash "$wrapper" send TASK-1 --handoff "$XDG_STATE_HOME/pera-sandbox-tasks/TASK-1/record.json"
+    expect_failure bash "$wrapper" send TASK-1 --handoff "$root/handoff-large-invalid.json"
+    grep -q 'Unexpected handoff fields' "$root/failure.err"
+    fixture context-check-refusals
+    bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-plan.json"
+    plan=$(jq -er .planId "$root/context-plan.json")
+    bash "$wrapper" send TASK-1 --apply "$plan" > "$root/context-applied.json"
+    bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-unchanged.json"
+    [[ $(jq -r .status "$root/context-unchanged.json") == unchanged ]]
+    expect_failure bash "$wrapper" send TASK-1
+    expect_failure bash "$wrapper" send TASK-1 --brief Documentation:review.md
+    fixture context-prior-work
+    bash "$wrapper" collect TASK-1 > "$root/context-collection-first.json"
+    fixture context-metadata
+    bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-metadata-plan.json"
+    metadata_plan=$(jq -er .planId "$root/context-metadata-plan.json")
+    fixture context-corrupt-original
+    bash "$wrapper" send TASK-1 --apply "$metadata_plan" > "$root/context-metadata-applied.json"
+    fixture context-check-metadata
+    bash "$wrapper" collect TASK-1 > "$root/context-collection-metadata.json"
+    fixture context-omit
+    bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-needs-decision.json"
+    fixture context-check-needs-decision
+    fixture context-decide
+    bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-second-plan.json"
+    second=$(jq -er .planId "$root/context-second-plan.json")
+    bash "$wrapper" send TASK-1 --apply "$second" > "$root/context-second-applied.json"
+    fixture context-work
+    bash "$wrapper" status TASK-1 > "$root/context-status.json"
+    bash "$wrapper" collect TASK-1 > "$root/context-collection-work.json"
+    fixture context-before-replay
+    bash "$wrapper" send TASK-1 --apply "$plan" > "$root/context-replay.json"
+    fixture context-check-final
+    echo 'PASS context wrapper: private intake, v2 opt-in, carry-forward, exact plans, metadata-only collection and audited write-back.'
+    exit 0
+fi
 round_wrapper="$scaffold/sandbox-round.sh"
 bash "$round_wrapper" inspect --workspace "$root/retained workspace" --repository prj \
     --image "$image" > "$root/observation-legacy.json"

@@ -87,6 +87,7 @@ exec node "$@" /tests/tasks/*.test.js' tasks "${test_args[@]}"
 [[ $(source_snapshot) == "$before" ]] || { echo 'Source changed during tests; results do not verify a stable snapshot.' >&2; exit 1; }
 if [[ $integration == 1 ]]; then
     bash "$scaffold/tests/tasks/wrapper-integration.sh" --image "$image"
+    bash "$scaffold/tests/tasks/wrapper-integration.sh" --image "$image" --context-only
     bash "$scaffold/tests/tasks/lock-integration.sh" --image "$image"
     [[ $(source_snapshot) == "$before" ]] || { echo 'Source changed during integration; rerun a stable snapshot.' >&2; exit 1; }
 fi

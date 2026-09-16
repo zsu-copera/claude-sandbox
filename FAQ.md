@@ -154,7 +154,9 @@ Stop for missing required context rather than assuming a relative link is usable
 
 **Does a ready status mean the README and implementation log match the host?**
 No. Retained-input integrity and canonical-document freshness are different.
-Current `status`/`send` do not detect drift in unselected shared documents.
+Legacy `status`/`send` do not detect drift in unselected shared documents.
+Opted-in tasks report committed drift for their declared set in `context`; read
+that report as well as workspace health. Undeclared dependencies are still unknown.
 If the sandbox will update them, include needed host snapshots and explicitly
 decide how to preserve both sides' changes, or leave those documents host-owned.
 Importing a current snapshot is not automatic synchronization of the editable file.
@@ -169,10 +171,28 @@ Binary attachment transport remains unsupported. See
 [text-carried scripts](OPERATOR.md#carry-a-script-as-a-document).
 
 **Must I re-register whenever the next brief has a different filename?**
-No. Use the complete explicit `--brief REPO:PATH` selection for that send.
-It replaces, rather than augments, the immutable registration's starting defaults.
-Include the supporting context and write-back snapshots as well as the new brief.
+No. Legacy tasks use the complete explicit `--brief REPO:PATH` selection, which
+replaces the registration's starting defaults for that invocation. Context-aware
+tasks use `--handoff`: its briefs change per round while declarations carry forward
+until explicitly retired. Include supporting context and write-back documents.
 Do not edit private task state or create another task just to change this selection.
+
+**Does `--handoff` merge host amendments into the sandbox README?**
+No. It records declarations, observes committed versions and binds explicit handling
+decisions to the approval plan. It still imports append-only snapshots, not canonical
+replacements. Reconciliation is an instruction for the agent or host author, not an
+automatic edit. See [context-aware handoffs](OPERATOR.md#context-aware-handoffs-explicit-opt-in).
+
+**Why did a send ask for a decision without giving a plan ID?**
+An active shared document differs or is absent canonically, and needs an applicable
+per-handoff decision. A `needs-decision` report is not an approved or partially
+applied handoff. Amend the private input and prepare again; missing/unsupported
+required source content cannot be waived by a decision.
+
+**Why is there a new collection even though no Git HEAD changed?**
+A context-only approval changes the declarations/decisions that must accompany the
+audit. The collection identity includes that context revision. No import directory
+or artificial work-baseline advancement is needed just to preserve this provenance.
 
 **Can the outside agent apply a different brief after a plan was approved?**
 No. The plan binds the selected committed inputs, packets and target state. A change

@@ -87,7 +87,10 @@ expected HEADs. See [OPERATOR.md](OPERATOR.md). The low-level commands remain av
 for diagnostics and recovery; the guarded agent launch is unchanged.
 
 Each handoff must account for required context and shared write-back documents.
-Snapshots do not refresh canonical files or detect every stale reference.
+The optional private `--handoff` contract carries declared documents forward and
+binds committed-version observations and handling decisions to an approval plan.
+Legacy tasks retain their existing workflow until explicitly opted in.
+Snapshots still do not refresh canonical files or discover every stale reference.
 Collection likewise does not merge or publish work: host integration and any push
 remain separate decisions. See the [harvest procedure](OPERATOR.md#harvest-and-integrate-reviewed-work).
 

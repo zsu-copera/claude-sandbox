@@ -152,12 +152,24 @@ remain separate. Attaching in-progress work requires an explicit audit baseline;
 registration must not hide existing changes by assuming the latest HEAD is the start.
 
 Before each send, the outside agent inventories required references and the documents
-the sandbox will write back, not just the new brief. The registered `briefs` list is
-fixed; a later `--brief` selection replaces that entire list for the invocation.
+the sandbox will write back, not just the new brief. For persistent declared-context
+tracking, explicitly opt in with a private `--handoff` file; see
+[the schema and compatibility boundary](OPERATOR.md#context-aware-handoffs-explicit-opt-in).
+Its brief selection changes per handoff while document declarations carry forward.
+Legacy tasks retain the fixed registered `briefs` list and whole-selection `--brief`
+override. Do not mix the two modes or edit a private registration to switch them.
 Include needed host amendments to shared documents, and explicitly decide how the
 agent should reconcile them with its canonical copies. Imports do not synchronize
 those copies. See [context and ownership](OPERATOR.md#select-context-and-assign-document-ownership)
 and [text-carried scripts](OPERATOR.md#carry-a-script-as-a-document).
+
+A context-aware `needs-decision` result has no applicable plan ID: resolve the
+reported shared-document handling before preparing again. Context-only changes
+still require approval but create no import round. Opt-in upgrades private metadata
+to version 2, not the registration configuration or warmed workspace; do not switch
+an opted-in task back to older controller code or restore an obsolete record.
+Context tracking does not start an agent, synchronize canonical documents, or
+replace the outside audit.
 
 Allow minutes for controller operations, not a short interactive-command timeout:
 EEP-24's first send preview exceeded a 120-second client timeout. This is an observed
