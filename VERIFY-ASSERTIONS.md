@@ -417,6 +417,41 @@ drift and write-back ownership are not enforced by the controller. The current
 runbook adds explicit operator decisions and reviewed harvest guidance; it does
 not implement automatic synchronization, attachments or integration.
 
+### Declared-context foundation (phase 1), 2026-09-16
+
+`tools/tasks/context.js` implements the pure handoff contract, not a new operator
+command. Its repository identifiers are supplied by the caller; there are no
+PERA repository names or ticket paths in the contract logic. The current controller
+still uses its existing `prj`/`Documentation` registration and adapter. Generalizing
+the workspace runner, build profiles and repository registration is separate work.
+
+The module validates a closed handoff schema, carries declared documents forward,
+records explicit retirement/role/reason changes, classifies drift against separate
+source/target observations, and assesses per-handoff write-back decisions.
+It reuses the round importer's existing document-path validator and limits through
+additive exports; packet rendering and import behavior are unchanged.
+Content comparisons use mode, size and SHA-256 rather than commit identity or
+Git-format-specific blob IDs. Missing, unsupported and unobserved states remain
+distinct; none supplies an invented clean baseline.
+
+Targeted coverage in `tests/tasks/context.test.js` includes caller-supplied
+single-repository, three-repository and legacy two-repository layouts, omission
+of a previously declared README, retirement, metadata-only declaration changes,
+first observations, legitimate sandbox-only changes, unchanged divergence,
+SHA-1/SHA-256 provenance, and decisions that cannot waive unavailable context.
+These are pure-data cases, not new live workspace or handoff evidence.
+
+Recorded 2026-09-16: the existing task runner's `context|closed config` selector
+passed all 27 context cases plus the existing closed-config compatibility case.
+The runner also reports an unmatched repository-test file as a passing file entry;
+that is not another exercised case. This was not a full controller/integration run.
+
+**Not wired yet:** `--handoff`, document observation by the runtime helpers,
+version-2 task metadata/plans, context-aware status/collection, and generated
+handoff path maps. This phase creates no registration, updates no private task
+state, and changes no live sandbox or application repository. Decision results
+are proposed handoff instructions, not automatic canonical-file edits.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is

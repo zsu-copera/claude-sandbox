@@ -1033,4 +1033,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { main, validatePacket, packetFiles, sha256 };
+module.exports = { main, validatePacket, packetFiles, sha256, documentPath, MAX_DOCUMENT, MAX_DOCUMENTS };
