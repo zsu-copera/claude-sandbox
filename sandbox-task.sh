@@ -7,6 +7,7 @@ usage() {
 Usage:
   bash sandbox-task.sh register --config FILE
   bash sandbox-task.sh send TASK [--brief REPO:RELATIVE_PATH ...]
+  bash sandbox-task.sh send TASK --handoff FILE
   bash sandbox-task.sh send TASK --apply PLAN_ID
   bash sandbox-task.sh status TASK
   bash sandbox-task.sh collect TASK
@@ -42,6 +43,26 @@ Partial sends require same-plan retry; foreign recovery is never overwritten.
 Collections contain full changes.patch, focused work.patch, history.bundle when
 needed, checksums, explicit incremental/work bases and input provenance.
 Bundles are unreviewed; collection neither applies them nor runs application tests.
+
+--handoff explicitly opts a task into context-aware sends. FILE must be an absolute
+non-symlink, owned mode-600 single-link file in an owned mode-700 directory, outside
+the workspace, source repos, scaffold and controller state. Maximum size: 1 MiB.
+It is captured once; apply reads the approved plan, never the editable original.
+Do not combine --handoff with --brief or --apply.
+
+Closed handoff schema:
+{"version":1,"briefs":{"prj":[],"Documentation":["review.md"]},
+ "documents":[{"repository":"Documentation","path":"README.md","role":"shared",
+   "reason":"Both sides update task status"}],
+ "retire":[],"decisions":[]}
+Document roles are reference, shared and host-owned. Declarations carry forward;
+retirements explicitly name repository/path/reason. Decisions name
+repository/path/action/reason. Actions are reconcile-in-sandbox, retain-sandbox,
+defer-to-host or initialize-from-source. They are instructions, not automatic edits.
+Missing decisions produce needs-decision with no applicable plan ID.
+Successful context planning upgrades private task metadata to version 2;
+subsequent sends require --handoff. Existing registration config is unchanged.
+Context-only approval creates no import round and does not move audit/work bases.
 USAGE
 }
 die() { printf 'sandbox-task: %s\n' "$*" >&2; exit 1; }
@@ -54,6 +75,7 @@ if [[ $# == 1 && ( $1 == --help || $1 == -h ) ]]; then usage; exit 0; fi
 task=
 config_file=
 plan_id=
+handoff_file=
 briefs=()
 if [[ $mode == register ]]; then
     [[ $# == 2 && $1 == --config && -n $2 && $2 != --* ]] || die 'Register requires exactly --config FILE.'
@@ -67,15 +89,21 @@ else
         [[ $# -gt 1 && -n $2 && $2 != --* ]] || die 'Missing send option value.'
         case "$1" in
             --brief)
-                [[ -z $plan_id && $2 =~ ^(prj|Documentation):.+ ]] || die '--brief requires REPO:PATH and cannot accompany --apply.'
+                [[ -z $plan_id && -z $handoff_file && $2 =~ ^(prj|Documentation):.+ ]] || die '--brief requires REPO:PATH and cannot accompany --apply or --handoff.'
                 briefs+=("$2");;
+            --handoff)
+                [[ -z $handoff_file && -z $plan_id && ${#briefs[@]} == 0 ]] || die '--handoff requires one FILE and cannot accompany --brief or --apply.'
+                handoff_file=$2;;
             --apply)
-                [[ -z $plan_id && ${#briefs[@]} == 0 && $2 =~ ^[0-9a-f]{64}$ ]] || die '--apply requires one exact plan ID and no --brief.'
+                [[ -z $plan_id && -z $handoff_file && ${#briefs[@]} == 0 && $2 =~ ^[0-9a-f]{64}$ ]] || die '--apply requires one exact plan ID and no --brief or --handoff.'
                 plan_id=$2;;
             *) die "Unknown argument: $1";;
         esac
         shift 2
     done
+    if [[ -n $handoff_file ]]; then
+        command -v head >/dev/null 2>&1 || die 'Required WSL command is missing: head'
+    fi
 fi
 for program in podman jq flock realpath stat id mkdir chmod mv rm sleep dirname; do
     command -v "$program" >/dev/null 2>&1 || die "Required WSL command is missing: $program"
@@ -101,7 +129,7 @@ private_dir() {
 }
 private_file() {
     [[ -f $1 && ! -L $1 && $(stat -c %u -- "$1") == "$(id -u)" \
-        && $(stat -c %a -- "$1") == 600 && $(stat -c %h -- "$1") == 1 ]] || die 'Unsafe task state file.'
+        && $(stat -c %a -- "$1") == 600 && $(stat -c %h -- "$1") == 1 ]] || die "Unsafe ${2:-task state} file."
 }
 if [[ $mode == register ]]; then
     [[ -f $config_file && ! -L $config_file ]] || die 'Config must be a regular non-symlink file.'
@@ -132,6 +160,19 @@ for repository in prj Documentation; do
     target=$(resolve "$workspace/$repository")
     [[ -d $target/.git && ! -L $target/.git ]] || die 'Target requires an ordinary .git directory.'
 done
+if [[ -n $handoff_file ]]; then
+    [[ $handoff_file != *[[:cntrl:]]* ]] || die 'Handoff path must not contain control characters.'
+    handoff_file=$(resolve "$handoff_file")
+    private_file "$handoff_file" handoff
+    private_dir "$(dirname -- "$handoff_file")"
+    for protected in "$workspace" "$scaffold" "$state_base" \
+        "$(jq -er '.repositories.prj.source | strings' <<< "$config")" \
+        "$(jq -er '.repositories.Documentation.source | strings' <<< "$config")"; do
+        protected=$(resolve "$protected")
+        ! overlaps "$protected" "$handoff_file" || die 'Handoff input overlaps a workspace, source, scaffold or controller state.'
+    done
+    [[ $(stat -c %s -- "$handoff_file") -le 1048576 ]] || die 'Handoff input exceeds 1 MiB.'
+fi
 [[ ! -e $state_base ]] && mkdir -p -m 700 -- "$state_base"
 private_dir "$state_base"
 if [[ ! -e $task_root ]]; then mkdir -m 700 -- "$task_root"; fi
@@ -186,11 +227,22 @@ if [[ $image_id =~ ^[0-9a-f]{64}$ ]]; then image_id="sha256:$image_id"; fi
 if [[ $mode != register ]]; then
     [[ $image_id == "$(jq -er .imageId "$task_root/record.json")" ]] || die 'Registered image changed; restore the pinned image.'
 fi
+handoff_value="$operation/handoff-value.json"
+if [[ -n $handoff_file ]]; then
+    head -c 1048577 -- "$handoff_file" > "$operation/handoff.json"
+    [[ $(stat -c %s -- "$operation/handoff.json") -le 1048576 ]] || die 'Handoff input exceeded 1 MiB during capture.'
+    chmod 400 -- "$operation/handoff.json"
+    jq -ces 'if length == 1 and (.[0] | type == "object") then .[0]
+        else error("Expected exactly one handoff object") end' "$operation/handoff.json" > "$handoff_value" \
+        || die 'Handoff input must contain exactly one valid JSON object.'
+else
+    printf 'null\n' > "$handoff_value"
+fi
 brief_json='[]'
 for selected in "${briefs[@]}"; do brief_json=$(jq -c --arg selected "$selected" '. + [$selected]' <<< "$brief_json"); done
 jq -n --arg mode "$mode" --arg hostRoot "$task_root" --arg planId "$plan_id" \
-    --argjson config "$config" --argjson briefs "$brief_json" \
-    '{mode:$mode,hostRoot:$hostRoot,config:$config,briefs:$briefs,planId:$planId}' > "$operation/input.json"
+    --argjson config "$config" --argjson briefs "$brief_json" --slurpfile handoff "$handoff_value" \
+    '{mode:$mode,hostRoot:$hostRoot,config:$config,briefs:$briefs,planId:$planId,handoff:$handoff[0]}' > "$operation/input.json"
 container=(podman run --rm --pull=never --network=none --cap-drop=all
     --security-opt=no-new-privileges --userns=keep-id --http-proxy=false
     --unsetenv-all --env PATH=/usr/local/bin:/usr/bin:/bin --env HOME=/nonexistent

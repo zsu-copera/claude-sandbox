@@ -5,7 +5,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 const { spawnSync } = require('node:child_process');
-const { Controller, validateConfig, selection, digest, nextRound } = require('/opt/tasks/tasks.js');
+const { Controller, validateConfig, validateCapturedHandoff, selection, digest, nextRound } = require('/opt/tasks/tasks.js');
+const { main: inspectSource } = require('/opt/tasks/source.js');
 const { core, fixture, repository, git, write, tree, exported, successful, invoke } = require('../rounds/fixtures');
 
 process.umask(0o077);
@@ -37,7 +38,9 @@ function setup(t) {
         if (injected !== undefined) return injected;
         let result;
         if (operation === 'image') result = { id: f.image, user: 'sandbox' };
-        else if (operation === 'source') result = { ref: args.ref, head: git(args.source, 'rev-parse', args.ref) };
+        else if (operation === 'source') result = args.paths
+            ? inspectSource(['source', args.ref, ...args.paths], args.source)
+            : { ref: args.ref, head: git(args.source, 'rev-parse', args.ref) };
         else if (operation === 'import-head') {
             const target = path.join(args.workspace, args.repository);
             assert.equal(git(target, 'rev-list', '--parents', '-n', '1', args.head), `${args.head} ${args.base}`);
@@ -80,6 +83,15 @@ function commit(root, file, content) {
 }
 function send(f) { return f.controller().send(); }
 function apply(f, plan) { return f.controller().apply(plan.planId); }
+const sharedReadme = () => ({ repository: 'prj', path: 'README.md', role: 'shared', reason: 'Keep implementation context current' });
+function handoff(f, changes = {}) {
+    return { version: 1, briefs: Object.fromEntries(Object.entries(f.config.repositories).map(([repo, config]) => [repo, [...config.briefs]])),
+        documents: [sharedReadme()], retire: [], decisions: [], ...changes };
+}
+function contextSend(f, value = handoff(f)) { return f.controller().send([], value); }
+function readmeDecision(action = 'reconcile-in-sandbox', reason = 'Reconcile the reviewed changes in the sandbox') {
+    return { repository: 'prj', path: 'README.md', action, reason };
+}
 
 test('closed config rejects ambiguous refs, paths, fields, types and brief selections', () => {
     const base = { version: 1, task: 'TASK-1', workspace: '/fixture/workspace', image: 'fixture', profiles: [],
@@ -585,4 +597,566 @@ test('source working-tree edits are never silently committed or selected instead
 
 test('canonical plan identities are stable across object property order', () => {
     assert.equal(digest({ b: ['x'], a: { y: 1, x: 2 } }), digest({ a: { x: 2, y: 1 }, b: ['x'] }));
+});
+
+test('context controller captured handoff requires fatal UTF-8, one JSON value and request equality without leaking bodies', () => {
+    const expected = { path: 'README.md', reason: 'Reviewed context' };
+    const bytes = Buffer.from(JSON.stringify(expected));
+    assert.deepEqual(validateCapturedHandoff(expected, () => bytes), expected);
+    assert.deepEqual(validateCapturedHandoff(expected, () => Buffer.concat([
+        Buffer.from([0xef, 0xbb, 0xbf]), bytes,
+    ])), expected, 'A UTF-8 BOM is accepted by normal TextDecoder handling');
+    assert.deepEqual(validateCapturedHandoff(expected, () => Buffer.from(
+        '{ "reason": "Reviewed context", "path": "README.md" }\n')), expected);
+    const invalid = [
+        Buffer.concat([Buffer.from('{"path":"README.md","reason":"'), Buffer.from([0xc3, 0x28]), Buffer.from('"}')]),
+        Buffer.concat([bytes, Buffer.from([0])]),
+        Buffer.concat([bytes, bytes]),
+        Buffer.from('{"private-body-do-not-echo":'),
+        Buffer.from(JSON.stringify({ ...expected, reason: 'Changed by request normalization' })),
+        Buffer.alloc(1024 * 1024 + 1, 0x20),
+    ];
+    for (const value of invalid) {
+        assert.throws(() => validateCapturedHandoff(expected, () => value),
+            error => error.message === 'Invalid handoff JSON/encoding');
+    }
+    const malformed = invalid[0];
+    const replacementDecoded = JSON.parse(malformed.toString('utf8'));
+    assert.throws(() => validateCapturedHandoff(replacementDecoded, () => malformed),
+        error => error.message === 'Invalid handoff JSON/encoding',
+        'Replacement-decoded request equality must not bypass fatal decoding');
+    const unreadable = Object.assign(new Error('Captured input is unreadable'), { code: 'EACCES' });
+    assert.throws(() => validateCapturedHandoff(expected, () => { throw unreadable; }),
+        error => error === unreadable, 'I/O errors must not be misclassified as JSON syntax failures');
+});
+
+test('context controller opt-in preserves closed config and refuses unresolved legacy sends or v2 brief bypasses', t => {
+    const f = setup(t);
+    f.register();
+    const original = f.record();
+    const legacy = send(f);
+    const pending = tree(f.registry);
+    assert.throws(() => contextSend(f), /pending legacy/);
+    assert.deepEqual(tree(f.registry), pending);
+    apply(f, legacy);
+    assert.equal(f.record().version, 1);
+    assert.equal(Object.hasOwn(f.controller().status(), 'context'), false);
+    const plan = contextSend(f);
+    assert.equal(plan.status, 'approval-required');
+    assert.equal(f.record().version, 2);
+    assert.deepEqual(f.record().config, original.config);
+    assert.equal(f.record().configDigest, original.configDigest);
+    assert.equal(f.record().lastContext, null);
+    assert.equal(f.controller().status().context.status, 'not-applied');
+    assert.throws(() => send(f), /explicit --handoff/);
+    assert.throws(() => f.controller().send(['prj:README.md']), /explicit --handoff/);
+    assert.throws(() => f.controller().send(['prj:README.md'], handoff(f)), /mutually exclusive/);
+    apply(f, plan);
+    assert.deepEqual(f.record().lastContext, { revision: 1, planId: plan.planId });
+});
+
+test('context controller refuses legacy partial opt-in without changing the recovery plan', t => {
+    const f = setup(t);
+    f.register();
+    const plan = send(f);
+    f.hook = (operation, args) => {
+        if (operation === 'round' && args.mode === 'apply' && args.repository === 'Documentation') throw new Error('second import stopped');
+    };
+    assert.throws(() => apply(f, plan), /stopped/);
+    const record = f.record();
+    assert.throws(() => contextSend(f), /pending legacy/);
+    assert.deepEqual(f.record(), record);
+    f.hook = () => {};
+    apply(f, plan);
+});
+
+test('context controller needs-decision is diagnostic without a plan, upgrade, or baseline mutation', t => {
+    const f = setup(t);
+    f.register();
+    commit(f.source, 'README.md', 'A differing shared canonical input\n');
+    const before = tree(f.registry);
+    const workspace = tree(f.workspace);
+    const diagnostic = contextSend(f);
+    assert.equal(diagnostic.status, 'needs-decision');
+    assert.equal(Object.hasOwn(diagnostic, 'planId'), false);
+    assert.equal(diagnostic.approvalRequired, false);
+    assert.equal(diagnostic.context.documents[0].drift.relationship, 'different');
+    assert.equal(diagnostic.context.documents[0].drift.changesSinceApproval, 'unbaselined');
+    assert.deepEqual(tree(f.registry), before);
+    assert.deepEqual(tree(f.workspace), workspace);
+    const plan = contextSend(f, handoff(f, { decisions: [readmeDecision()] }));
+    assert.equal(plan.context.documents[0].action, 'reconcile-in-sandbox');
+    assert.deepEqual(plan.context.decisions, [readmeDecision()]);
+    apply(f, plan);
+    assert.equal(fs.readFileSync(path.join(f.target, 'README.md'), 'utf8'), 'Canonical README remains unchanged.\n');
+    commit(f.source, 'README.md', 'A second differing shared canonical input\n');
+    const applied = tree(f.registry);
+    assert.equal(contextSend(f, handoff(f, { documents: [] })).status, 'needs-decision');
+    assert.deepEqual(tree(f.registry), applied);
+});
+
+test('context controller missing and unsupported required source inputs fail even for brief-only paths', t => {
+    const f = setup(t);
+    f.register();
+    const before = tree(f.registry);
+    assert.throws(() => contextSend(f, handoff(f, {
+        briefs: { prj: ['absent.md'], Documentation: [] }, documents: [],
+    })), /Required source input prj:absent.md is missing/);
+    assert.throws(() => contextSend(f, handoff(f, { documents: [
+        { repository: 'prj', path: 'absent-reference.md', role: 'reference', reason: 'Required supporting input' },
+    ] })), /Required source input.*missing/);
+    fs.symlinkSync('README.md', path.join(f.source, 'unsupported.md'));
+    git(f.source, 'add', 'unsupported.md');
+    git(f.source, 'commit', '--quiet', '-m', 'Unsupported input fixture');
+    assert.throws(() => contextSend(f, handoff(f, {
+        briefs: { prj: ['unsupported.md'], Documentation: [] }, documents: [],
+    })), /Required source input.*unsupported/);
+    assert.deepEqual(tree(f.registry), before);
+    assert.equal(f.record().version, 1);
+});
+
+test('context controller missing canonical reference is valid but shared initialization requires guidance', t => {
+    const f = setup(t);
+    commit(f.source, 'reference.md', 'Committed reference that is absent canonically\n');
+    f.register();
+    const reference = { repository: 'prj', path: 'reference.md', role: 'reference', reason: 'Snapshot-only reference' };
+    const plan = contextSend(f, handoff(f, { documents: [reference] }));
+    assert.equal(plan.context.documents[0].target.state, 'missing');
+    assert.equal(plan.context.documents[0].action, 'read-snapshot');
+    apply(f, plan);
+    assert.equal(fs.existsSync(path.join(f.target, 'reference.md')), false);
+    const shared = handoff(f, { documents: [{ ...reference, role: 'shared' }] });
+    assert.equal(contextSend(f, shared).status, 'needs-decision');
+    shared.decisions = [{ repository: 'prj', path: 'reference.md', action: 'initialize-from-source', reason: 'Create canonical during implementation' }];
+    const metadata = contextSend(f, shared);
+    assert.equal(metadata.round, null);
+    assert.equal(metadata.context.documents[0].action, 'initialize-from-source');
+    apply(f, metadata);
+    assert.equal(fs.existsSync(path.join(f.target, 'reference.md')), false, 'Approval must not execute canonical initialization');
+});
+
+test('context controller carries omitted shared README forward and maps reused inputs to their exact delivery', t => {
+    const f = setup(t);
+    f.register();
+    const first = contextSend(f);
+    apply(f, first);
+    commit(f.docsSource, 'review.md', 'New review for the next round\n');
+    const carried = handoff(f, { documents: [] });
+    const second = contextSend(f, carried);
+    assert.equal(second.round, 'R2');
+    assert.equal(second.repositories.prj.action, 'preserve');
+    const map = second.context.pathMap.find(item => item.repository === 'prj' && item.path === 'README.md');
+    assert.equal(map.snapshotPath, 'sandbox-rounds/TASK-1/R1/files/README.md');
+    assert.equal(map.deliveryPlanId, first.planId);
+    assert.equal(map.canonicalPath, 'README.md');
+    assert.equal(map.writeBack, 'sandbox');
+    apply(f, second);
+    commit(f.source, 'README.md', 'New external README that was omitted from the brief list\n');
+    const diagnostic = contextSend(f, carried);
+    assert.equal(diagnostic.status, 'needs-decision');
+    assert.equal(diagnostic.context.documents[0].drift.changesSinceApproval, 'source-only');
+    const third = contextSend(f, { ...carried, decisions: [readmeDecision()] });
+    assert.ok(third.repositories.prj.changedBriefs.includes('README.md'));
+    assert.ok(third.repositories.prj.inputs.some(item => item.path === 'README.md'));
+    apply(f, third);
+});
+
+test('context controller path maps honor host deferral for new and reused shared snapshots', t => {
+    const f = setup(t);
+    f.register();
+    const canonical = fs.readFileSync(path.join(f.target, 'README.md'), 'utf8');
+    commit(f.source, 'README.md', 'Outside amendment awaiting host reconciliation\n');
+    const value = handoff(f, { decisions: [readmeDecision('defer-to-host', 'Keep reconciliation with the outside author')] });
+    const first = contextSend(f, value);
+    const mapping = result => result.context.pathMap.find(item => item.repository === 'prj' && item.path === 'README.md');
+    assert.equal(mapping(first).role, 'shared');
+    assert.equal(mapping(first).writeBack, 'host');
+    apply(f, first);
+    assert.equal(fs.readFileSync(path.join(f.target, 'README.md'), 'utf8'), canonical);
+    commit(f.docsSource, 'review.md', 'Another review with the same deferred input\n');
+    const second = contextSend(f, value);
+    assert.equal(second.repositories.prj.action, 'preserve');
+    assert.equal(mapping(second).deliveryPlanId, first.planId);
+    assert.equal(mapping(second).writeBack, 'host');
+    apply(f, second);
+    assert.equal(fs.readFileSync(path.join(f.target, 'README.md'), 'utf8'), canonical);
+});
+
+test('context controller role changes and retirements are metadata approvals, with exact retirement repeat only', t => {
+    const f = setup(t);
+    f.register();
+    apply(f, contextSend(f));
+    const role = handoff(f, { documents: [{ ...sharedReadme(), role: 'host-owned', reason: 'Host integrates canonical documentation' }] });
+    const changed = contextSend(f, role);
+    assert.equal(changed.round, null);
+    assert.equal(changed.context.changes[0].kind, 'updated');
+    assert.equal(changed.context.changes[0].before.role, 'shared');
+    assert.equal(changed.context.changes[0].after.role, 'host-owned');
+    apply(f, changed);
+    assert.equal(contextSend(f, role).status, 'unchanged');
+    const retirement = handoff(f, { documents: [], retire: [
+        { repository: 'prj', path: 'README.md', reason: 'No longer part of retained task context' },
+    ] });
+    const retired = contextSend(f, retirement);
+    assert.equal(retired.round, null);
+    assert.equal(retired.context.changes[0].kind, 'retired');
+    assert.equal(retired.context.pathMap.some(item => item.path === 'README.md'), false);
+    const snapshots = tree(f.workspace);
+    apply(f, retired);
+    assert.deepEqual(tree(f.workspace), snapshots);
+    assert.equal(contextSend(f, retirement).status, 'unchanged');
+    assert.equal(f.record().lastContext.revision, 3);
+    const unknown = structuredClone(retirement);
+    unknown.retire[0].path = 'undeclared.md';
+    assert.throws(() => contextSend(f, unknown), /existing declaration/);
+    const changedReason = structuredClone(retirement);
+    changedReason.retire[0].reason = 'Not the previously applied retirement request';
+    assert.throws(() => contextSend(f, changedReason), /existing declaration/);
+});
+
+test('context controller decisions and committed packets stay pinned when sources advance after preparation', t => {
+    const f = setup(t);
+    f.register();
+    commit(f.source, 'README.md', 'Approved reviewed README\n');
+    const value = handoff(f, { decisions: [readmeDecision('retain-sandbox', 'Keep the sandbox canonical version')] });
+    const plan = contextSend(f, value);
+    const prepared = f.record();
+    value.decisions[0].action = 'defer-to-host';
+    commit(f.source, 'README.md', 'New source text after approval, not part of this send\n');
+    apply(f, plan);
+    const snapshot = fs.readFileSync(path.join(f.target, 'sandbox-rounds/TASK-1/R1/files/README.md'), 'utf8');
+    assert.equal(snapshot, 'Approved reviewed README\n');
+    assert.equal(f.controller().status().context.documents[0].decision.action, 'retain-sandbox');
+    assert.equal(f.controller().status().context.documents[0].drift.changesSinceApproval, 'source-only');
+    assert.equal(f.record().lastContext.planId, plan.planId);
+    assert.equal(prepared.lastContext, null);
+});
+
+test('context controller unrelated commits and equivalent additive declarations do not create revisions or rounds', t => {
+    const f = setup(t);
+    f.register();
+    apply(f, contextSend(f));
+    const before = tree(f.registry);
+    const workspace = tree(f.workspace);
+    commit(f.source, 'unselected.md', 'Unrelated source commit\n');
+    commit(f.docsSource, 'unselected.md', 'Another unrelated commit\n');
+    assert.equal(contextSend(f).status, 'unchanged');
+    assert.equal(contextSend(f, handoff(f, { documents: [] })).status, 'unchanged');
+    assert.deepEqual(tree(f.registry), before);
+    assert.deepEqual(tree(f.workspace), workspace);
+    assert.equal(f.controller().status().context.status, 'unchanged');
+});
+
+test('context controller pending same-state plans repeat exactly and unapplied replacements preserve the applied baseline', t => {
+    const f = setup(t);
+    f.register();
+    const first = contextSend(f);
+    assert.equal(contextSend(f).planId, first.planId);
+    const replacement = contextSend(f, handoff(f, { documents: [{ ...sharedReadme(), reason: 'Revised declaration before approval' }] }));
+    assert.notEqual(replacement.planId, first.planId);
+    assert.equal(replacement.round, first.round);
+    assert.equal(f.record().plans[first.planId].status, 'superseded');
+    assert.equal(f.record().lastContext, null);
+    assert.throws(() => apply(f, first), /superseded/);
+    apply(f, replacement);
+    assert.equal(f.record().lastContext.revision, 1);
+});
+
+test('context controller metadata-only first opt-in can reuse a legacy delivery without a new round', t => {
+    const f = setup(t);
+    f.register();
+    const legacy = f.controller().send(['prj:README.md', 'prj:briefs/first brief.md', 'Documentation:review.md']);
+    apply(f, legacy);
+    const before = f.record();
+    const workspace = tree(f.workspace);
+    const first = contextSend(f);
+    assert.equal(first.round, null);
+    assert.ok(first.context.pathMap.every(item => item.deliveryPlanId === legacy.planId));
+    apply(f, first);
+    assert.deepEqual(f.record().executionHeads, before.executionHeads);
+    assert.deepEqual(f.record().collectionHeads, before.collectionHeads);
+    assert.equal(f.record().lastRound, legacy.round);
+    assert.deepEqual(tree(f.workspace), workspace);
+});
+
+test('context controller promotes a previously observed brief using its applied source and target baseline', t => {
+    const f = setup(t);
+    f.register();
+    const briefs = { prj: ['README.md'], Documentation: ['review.md'] };
+    apply(f, contextSend(f, handoff(f, { briefs, documents: [] })));
+    commit(f.target, 'README.md', 'Canonical changed since its brief-only observation\n');
+    const proposed = contextSend(f, handoff(f, { briefs }));
+    assert.equal(proposed.status, 'needs-decision');
+    assert.equal(proposed.context.documents[0].drift.changesSinceApproval, 'sandbox-only');
+    assert.equal(f.record().lastContext.revision, 1);
+});
+
+test('context controller metadata approval remains bound to both target heads and the pinned image', t => {
+    const f = setup(t);
+    f.register();
+    apply(f, contextSend(f));
+    const metadata = contextSend(f, handoff(f, { documents: [{ ...sharedReadme(), role: 'host-owned' }] }));
+    assert.equal(metadata.round, null);
+    f.image = `sha256:${'b'.repeat(64)}`;
+    assert.throws(() => apply(f, metadata), /image changed/);
+    f.image = IMAGE;
+    commit(f.documentation, 'later.md', 'Unapproved target context advance\n');
+    assert.throws(() => apply(f, metadata), /unchanged context advanced/);
+    assert.equal(f.record().lastContext.revision, 1);
+});
+
+test('context controller unchanged requests still verify retained snapshots, cleanliness and named source branches', t => {
+    const f = setup(t);
+    f.register();
+    const plan = contextSend(f);
+    apply(f, plan);
+    write(f.target, 'README.md', 'Dirty canonical data\n');
+    assert.throws(() => contextSend(f), /dirty/);
+    git(f.target, 'checkout', '--', 'README.md');
+    const sourceRef = f.config.repositories.prj.ref;
+    git(f.source, 'update-ref', '-d', sourceRef);
+    assert.throws(() => contextSend(f), /inspection failed/);
+    git(f.source, 'update-ref', sourceRef, f.sourceHead);
+    commit(f.target, 'sandbox-rounds/TASK-1/R1/files/README.md', 'Changed immutable delivered snapshot\n');
+    assert.throws(() => contextSend(f), /Retained handoff integrity/);
+    assert.equal(f.controller().status().status, 'blocked');
+    assert.equal(f.controller().collect().status, 'collected');
+});
+
+test('context controller metadata-only approval preserves Git and execution bases but produces a new same-head collection', t => {
+    const f = setup(t);
+    f.register();
+    apply(f, contextSend(f));
+    const first = f.controller().collect();
+    const workspace = tree(f.workspace);
+    const before = f.record();
+    const metadata = contextSend(f, handoff(f, { documents: [{ ...sharedReadme(), reason: 'Updated approval scope without content changes' }] }));
+    assert.equal(metadata.round, null);
+    assert.equal(metadata.repositories.prj.action, 'preserve');
+    assert.equal(metadata.repositories.Documentation.action, 'preserve');
+    assert.deepEqual(f.record().lastContext, before.lastContext);
+    assert.throws(() => f.controller().collect(), /pending/);
+    apply(f, metadata);
+    const after = f.record();
+    assert.equal(after.lastContext.revision, 2);
+    assert.deepEqual(after.executionHeads, before.executionHeads);
+    assert.deepEqual(after.collectionHeads, before.collectionHeads);
+    assert.equal(after.lastRound, before.lastRound);
+    assert.deepEqual(tree(f.workspace), workspace);
+    const second = f.controller().collect();
+    assert.equal(second.status, 'collected');
+    assert.notEqual(second.collectionId, first.collectionId);
+    assert.deepEqual(second.manifest.binding.heads, first.manifest.binding.heads);
+    assert.deepEqual(second.manifest.binding.context, { revision: 2, planId: metadata.planId });
+    const provenance = JSON.parse(fs.readFileSync(path.join(second.directory, 'provenance.json')));
+    assert.equal(provenance.context.revision, 2);
+    assert.equal(provenance.context.documents[0].declarationReason, 'Updated approval scope without content changes');
+    assert.equal(f.controller().collect().status, 'unchanged');
+});
+
+test('context controller status is observational and committed canonical divergence stays collectable without source access', t => {
+    const f = setup(t);
+    f.register();
+    const first = contextSend(f);
+    apply(f, first);
+    commit(f.target, 'README.md', 'Legitimate canonical write-back after approval\n');
+    const record = f.record();
+    const status = f.controller().status();
+    assert.equal(status.status, 'ready');
+    assert.deepEqual(status.inputIssues, []);
+    assert.equal(status.context.status, 'changed');
+    assert.equal(status.context.documents[0].drift.changesSinceApproval, 'sandbox-only');
+    assert.equal(status.context.documents[0].status, 'needs-decision');
+    assert.deepEqual(f.record(), record);
+    assert.equal(apply(f, first).status, 'already-applied');
+    f.hook = operation => { if (operation === 'source') throw new Error('Source unavailable for audit'); };
+    const result = f.controller().collect();
+    assert.equal(result.status, 'collected');
+    const patch = fs.readFileSync(path.join(result.directory, 'prj', 'work.patch'), 'utf8');
+    assert.match(patch, /Legitimate canonical write-back/);
+    assert.deepEqual(f.record().lastContext, record.lastContext);
+});
+
+test('context controller running and dirty status never claim fresh canonical observations', t => {
+    const f = setup(t);
+    f.register();
+    apply(f, contextSend(f));
+    const record = f.record();
+    write(f.target, 'README.md', 'Uncommitted canonical edit\n');
+    let status = f.controller().status();
+    assert.equal(status.status, 'blocked');
+    assert.equal(status.context.status, 'unobserved');
+    assert.equal(status.context.documents[0].target.state, 'unobserved');
+    assert.equal(Object.hasOwn(status.context.documents[0].target, 'sha256'), false);
+    git(f.target, 'checkout', '--', 'README.md');
+    f.hook = (operation, args) => {
+        if (operation === 'round' && args.mode === 'inspect' && args.repository === 'prj') {
+            return { status: 'running', repository: 'prj', observedWorktree: false };
+        }
+    };
+    status = f.controller().status();
+    assert.equal(status.status, 'running');
+    assert.equal(status.context.status, 'unobserved');
+    assert.equal(status.context.documents[0].target.state, 'unobserved');
+    assert.equal(Object.hasOwn(status.context.documents[0].target, 'commit'), false);
+    assert.deepEqual(f.record(), record);
+    assert.throws(() => contextSend(f), /running/);
+});
+
+test('context controller completed legacy and context replays never rewind newer approved context', t => {
+    const f = setup(t);
+    f.register();
+    const legacy = send(f);
+    apply(f, legacy);
+    const first = contextSend(f);
+    apply(f, first);
+    const second = contextSend(f, handoff(f, { documents: [{ ...sharedReadme(), role: 'host-owned' }] }));
+    apply(f, second);
+    commit(f.target, 'README.md', 'Later canonical work is not immutable input corruption\n');
+    const before = f.record();
+    for (const plan of [legacy, first, second]) {
+        const result = apply(f, plan);
+        assert.equal(result.status, 'already-applied');
+        assert.equal(result.context.revision, 2);
+        assert.equal(result.context.observation, 'captured-approval');
+    }
+    assert.deepEqual(f.record(), before);
+    const rolledBack = structuredClone(before);
+    rolledBack.lastContext = { revision: 1, planId: first.planId };
+    write(f.registry, 'record.json', JSON.stringify(rolledBack));
+    for (const operation of [
+        () => f.controller().status(),
+        () => apply(f, first),
+        () => f.controller().collect(),
+        () => contextSend(f),
+    ]) assert.throws(operation, /latest fully applied approved plan/);
+    write(f.registry, 'record.json', JSON.stringify(before));
+    assert.equal(apply(f, first).context.revision, 2);
+});
+
+for (const fault of ['second-repository', 'lost-receipt', 'journal-updating-refs']) {
+    test(`context controller ${fault} recovery retains the exact approved two-repository context`, t => {
+        const f = setup(t);
+        f.register();
+        const plan = contextSend(f);
+        const original = fs.readFileSync(path.join(f.registry, 'plans', plan.planId, 'plan.json'));
+        if (fault === 'second-repository') f.hook = (operation, args) => {
+            if (operation === 'round' && args.mode === 'apply' && args.repository === 'Documentation') throw new Error('context import stopped');
+        };
+        else if (fault === 'lost-receipt') f.after = (operation, args) => {
+            if (operation === 'round' && args.mode === 'apply') throw new Error('context receipt lost');
+        };
+        else f.fault = fault;
+        assert.throws(() => apply(f, plan), /stopped|lost|interrupted/);
+        assert.equal(f.record().lastContext, null);
+        assert.equal(f.record().lastRound, null);
+        assert.throws(() => contextSend(f), /partial|recovery/);
+        assert.throws(() => f.controller().collect(), /pending/);
+        commit(f.source, 'README.md', 'Source advanced during interrupted delivery\n');
+        f.hook = () => {};
+        f.after = () => {};
+        f.fault = null;
+        apply(f, plan);
+        assert.deepEqual(fs.readFileSync(path.join(f.registry, 'plans', plan.planId, 'plan.json')), original);
+        assert.deepEqual(f.record().lastContext, { revision: 1, planId: plan.planId });
+        assert.equal(git(f.target, 'rev-list', '--count', 'HEAD'), '2');
+        assert.equal(git(f.documentation, 'rev-list', '--count', 'HEAD'), '2');
+        assert.equal(f.controller().status().context.documents[0].drift.changesSinceApproval, 'source-only');
+    });
+}
+
+test('context controller partial later delivery does not advance the independent applied observation baseline', t => {
+    const f = setup(t);
+    f.register();
+    const first = contextSend(f);
+    apply(f, first);
+    commit(f.source, 'README.md', 'Second approved README source\n');
+    commit(f.docsSource, 'review.md', 'Second approved external review\n');
+    const second = contextSend(f, handoff(f, { documents: [], decisions: [readmeDecision()] }));
+    f.hook = (operation, args) => {
+        if (operation === 'round' && args.mode === 'apply' && args.repository === 'Documentation') throw new Error('partial context update');
+    };
+    assert.throws(() => apply(f, second), /partial context update/);
+    assert.deepEqual(f.record().lastContext, { revision: 1, planId: first.planId });
+    const status = f.controller().status();
+    assert.equal(status.context.revision, 1);
+    assert.equal(status.context.documents[0].drift.changesSinceApproval, 'source-only');
+    f.hook = () => {};
+    apply(f, second);
+    assert.deepEqual(f.record().lastContext, { revision: 2, planId: second.planId });
+    assert.equal(f.controller().status().context.documents[0].drift.changesSinceApproval, 'none');
+});
+
+for (const side of ['source', 'target']) for (const mutation of ['missing', 'duplicate', 'foreign', 'wrong-commit', 'unobserved-clean']) {
+    test(`context controller rejects ${side} ${mutation} observation inventories without publishing state`, t => {
+        const f = setup(t);
+        f.register();
+        const before = tree(f.registry);
+        f.after = (operation, args, result) => {
+            const selected = side === 'source' ? operation === 'source' && args.source === f.source
+                : operation === 'round' && args.mode === 'inspect' && args.repository === 'prj';
+            if (!selected || !args.paths) return;
+            if (mutation === 'missing') result.documents.pop();
+            else if (mutation === 'duplicate') result.documents[1] = structuredClone(result.documents[0]);
+            else if (mutation === 'foreign') result.documents[0].path = 'foreign.md';
+            else if (mutation === 'wrong-commit') result.documents[0].observation.commit = 'f'.repeat(40);
+            else result.documents[0].observation = { state: 'unobserved', reason: 'Unobserved source input' };
+        };
+        assert.throws(() => contextSend(f), /inventory|paths|HEAD\/state/);
+        assert.deepEqual(tree(f.registry), before);
+    });
+}
+
+test('context controller source and target inspection errors propagate rather than becoming missing observations', t => {
+    const f = setup(t);
+    f.register();
+    const before = tree(f.registry);
+    for (const failing of ['source', 'round']) {
+        f.hook = (operation, args) => {
+            if (operation === failing && args.paths) throw new Error('Document read I/O failure');
+        };
+        assert.throws(() => contextSend(f), /I\/O failure/);
+        assert.deepEqual(tree(f.registry), before);
+    }
+});
+
+test('context controller changed decisions, context pointers, unknown versions and provenance fail closed', t => {
+    const f = setup(t);
+    f.register();
+    commit(f.source, 'README.md', 'Divergent reviewed input\n');
+    const plan = contextSend(f, handoff(f, { decisions: [readmeDecision()] }));
+    const file = path.join(f.registry, 'plans', plan.planId, 'plan.json');
+    fs.chmodSync(file, 0o600);
+    const original = fs.readFileSync(file);
+    for (const mutate of [
+        value => { value.context.handoff.decisions[0].action = 'retain-sandbox'; },
+        value => { value.context.pathMap[0].snapshotPath = 'sandbox-rounds/OTHER/R99/files/review.md'; },
+        value => { value.version = 99; },
+    ]) {
+        const altered = JSON.parse(original);
+        mutate(altered);
+        fs.writeFileSync(file, JSON.stringify(altered));
+        assert.throws(() => apply(f, plan), /approved plan ID/);
+        fs.writeFileSync(file, original);
+    }
+    apply(f, plan);
+    const recordFile = path.join(f.registry, 'record.json');
+    const record = fs.readFileSync(recordFile);
+    for (const mutate of [
+        value => { value.lastContext = null; },
+        value => { value.lastContext.revision = 7; },
+        value => { value.lastContext.documents = []; },
+        value => { value.version = 99; },
+        value => { value.plans[plan.planId].completed = {}; },
+    ]) {
+        const altered = JSON.parse(record);
+        mutate(altered);
+        fs.writeFileSync(recordFile, JSON.stringify(altered));
+        assert.throws(() => f.controller().status());
+        fs.writeFileSync(recordFile, record);
+    }
+    const collected = f.controller().collect();
+    const provenance = path.join(collected.directory, 'provenance.json');
+    fs.appendFileSync(provenance, '\n');
+    assert.throws(() => f.controller().collect(), /checksum mismatch/);
 });
