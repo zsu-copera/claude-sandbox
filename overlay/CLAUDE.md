@@ -124,6 +124,19 @@ Reference implementations: **Form** → `agency/.../service/finalsalary/` +
 
 ## Build & test (Linux, offline)
 
+**Verify the command and the deliverable, not just a success message.** Prefer a
+separate tool call for each build/test command; redirect output to a file if needed.
+If you use a pipeline or wrapper, preserve failure explicitly (for example, Bash
+`set -o pipefail` for a pipeline). Save the command's exit status before printing
+or inspecting logs, and return that status from the wrapper. Printing `$?` followed
+by a successful `echo` does not preserve it.
+
+A zero exit or `BUILD SUCCESS` is necessary but not sufficient. Check the brief's
+required outputs and packaged contents, and establish that they belong to this
+build rather than a prior run in the warmed workspace. Report the actual executed
+test counts and any skipped checks; zero executed tests do not establish success.
+If a required check cannot run, report it as unverified, not passed.
+
 ```bash
 cd /workspace/prj
 
