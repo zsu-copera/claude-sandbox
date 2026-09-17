@@ -60,7 +60,8 @@ Do not edit the generated `prj/.github/copilot-instructions.md` to install this 
 Assign the lead as evidence custodian and a named human to review execution
 evidence before accepting the run. A handoff ledger summarizes operations; it is
 not the implementer's transcript, proof of tests, or an independent activity log.
-Neither normal `collect` nor this runbook installs a transcript-capture mechanism.
+Normal `collect` does not export transcripts. The optional host recorder below
+retains terminal output, not the CLI's complete tool/session record.
 
 Before the first ticket run with the chosen CLI/setup, record and demonstrate:
 
@@ -93,6 +94,108 @@ before workspace deletion/reuse or log cleanup. A missing transcript does not pr
 collecting committed work for preservation; it prevents claiming the execution
 review is complete. This gate is procedural, not a new check in the launch scripts
 or `new-sandbox.sh --force`.
+
+### Record an interactive launch on the host
+
+Use `sandbox-record.sh` from the trusted scaffold in an **interactive WSL terminal**,
+after the normal launch approval. It wraps the supplied command in util-linux
+`script`, preserving a PTY, output timing, launch arguments and exit status. It
+does not register a task, approve a run, inspect or change the image, install a
+firewall, or decide whether the supplied command is safe. Keep the existing
+guarded launcher and its flags; do not substitute a bare agent CLI.
+
+For an approved normal Copilot session, with login already completed:
+
+```bash
+bash /mnt/c/work/pera/claude-sandbox/sandbox-record.sh \
+  --label TASK-1-R1 --workspace "$HOME/pera-sandbox" -- \
+  podman run -it --rm --name pera-copilot --userns=keep-id \
+    --cap-add=NET_ADMIN --cap-add=NET_RAW \
+    -v "$HOME/pera-sandbox:/workspace" -v pera-copilot-config:/home/vscode/.copilot \
+    -w /workspace pera-sandbox run-copilot
+```
+
+Replace the label and workspace with the approved run's values. The `--workspace`
+value must match the actual workspace mount. Arguments following `--` are passed
+as separate arguments, without shell re-parsing; add approved CLI arguments after
+`run-copilot`. This is an interactive recipe, not qualification of headless or
+autopilot behavior. The same recorder can wrap another guarded launcher, but
+capture must be demonstrated for that CLI/mode before relying on it.
+
+The recorder requires existing WSL Bash, util-linux `script`, `jq` and GNU
+coreutils (including `env --default-signal`). It never installs prerequisites.
+Its default root is
+`${XDG_STATE_HOME:-$HOME/.local/state}/pera-sandbox-recordings`; `--output-root`
+can select a different private host directory. Each invocation creates a new
+mode-700 directory and mode-600 artifacts, even if a label is reused. Existing
+directories with unsafe permissions or symlinked paths are refused, not repaired.
+
+Keep this root **outside source checkouts, the workspace, controller-owned
+records and every container mount**. The wrapper checks overlap with the declared
+workspace, scaffold and conventional operator-state paths; it cannot infer other
+mounts or source repositories from an arbitrary launch command. The operator
+must verify those boundaries. Do not mount recording storage into the agent or
+importer. A host-only recording loses that protection if the container can write it.
+
+The wrapper prints its private run directory and final outcome. It retains:
+
+| Artifact | Meaning |
+|---|---|
+| `launch.json` | Label, declared workspace, host working directory, time, recorder version and exact launch argument array. Not the actual agent model/version or a task-controller receipt. |
+| `command.argv` | The same launch arguments in NUL-delimited form for lossless execution. Evidence, not a script to replay automatically. |
+| `terminal.log`, `timing.log` | Raw terminal output and replay timing. Output is flushed while the command runs. No separate raw-input stream is logged. |
+| `command-exit.txt` | Exit status observed when the foreground launch command returns, if available. |
+| `outcome.json` | Launch, recorder and wrapper exit statuses; `returned`, `interrupted` or `recording-error`. |
+| `SHA256SUMS` | Hashes of the retained artifacts, published only after hashing succeeds. |
+
+`returned` means the foreground **launch command returned**, not that the agent
+finished its brief or its tests passed. It can accompany a nonzero exit. The
+wrapper normally propagates that exit; recorder failures return 125. A launch
+can itself exit 125, so distinguish it using `outcome.json`, not the number alone.
+`interrupted` records a signal received by the wrapper; stopping a container
+elsewhere can instead appear as a returned launch command. Correlate CLI events
+and container status rather than inferring the whole run's lifecycle from one field.
+
+Missing `outcome.json` or `SHA256SUMS`, a checksum mismatch, `recording-error` or
+`interrupted` requires explicit incomplete/error reporting. Keep the available
+files; do not erase them or relabel them as a successful run. An uncatchable kill,
+host failure or full disk may prevent finalization. The wrapper signals only its
+own recorder on interruption; it does not promise all container/background work
+has stopped. Inspect the exact approved container before recovery or reuse.
+
+The lead checks the hashes and pairs this directory with the selected CLI session
+artifacts, actual executable/version/model, image ID, plan and human approval.
+Record those associations and the human review state in the sanitized ledger;
+do not copy raw output there. Output and launch arguments may contain secrets,
+and terminal output can echo typed input even though raw-input logging is off.
+Keep normal login separate, preserve originals privately and identify redacted
+review copies separately. Raw terminal data includes control sequences; inspect
+it as escaped text or use a deliberately chosen replay environment, not an
+unreviewed `cat` into the operator's terminal.
+
+**Limits and qualification:** this is host-retained output, not a complete or
+authenticated tool history. Hidden/collapsed output and actions that the CLI
+never emits remain outside it; terminal output can itself be misleading.
+Retain the CLI events too. `verify-recording.sh` exercises disposable local PTYs,
+not Copilot. Before relying on this added layer for ticket work, demonstrate the
+same interactive CLI/launcher with normal exit and an approved interruption;
+check redraw/input, Ctrl-C, resize, retained output and session association.
+A periodic-output fixture can establish whether in-flight output reaches each
+capture surface; silence from `sleep` alone cannot answer that question.
+
+### Deploy the verification guidance without resetting a workspace
+
+`overlay/CLAUDE.md` now tells the sandbox agent to preserve verification exit
+status, check current-build artifacts and report actual test counts. Assembly
+copies it into both workspace-root `CLAUDE.md` and `AGENTS.md`; editing the
+scaffold does not refresh either file in an existing workspace.
+
+For a retained task, stop the agent, compare those deployed files and have the
+outside operator apply an explicitly approved instruction refresh. Preserve any
+unrelated local guidance. Do not overwrite canonical ticket instructions, use
+`new-sandbox.sh --force`, or repeat prepare for this change. No image rebuild or
+dependency rewarming is required. Ticket-specific required artifacts still belong
+in the brief; generic verification guidance does not invent acceptance criteria.
 
 ## Register once
 

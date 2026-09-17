@@ -94,8 +94,9 @@ working, not a bug) — re-run this step with the profile added.
 [the execution-evidence gate](OPERATOR.md#before-a-pilot-run-establish-execution-evidence).
 Identify the actual CLI/session, demonstrate capture and retrieval with a harmless
 separately approved probe, and assign human review/retention responsibility. The
-commands below do not install capture or export transcripts. Hold autonomous ticket
-execution if the required evidence path has not been established.
+basic launcher does not export transcripts. The recorded Copilot recipe below
+adds host terminal capture, not a complete CLI tool transcript. Hold autonomous
+ticket execution if the required evidence path has not been established.
 
 ```bash
 podman run -it --rm --name pera-agent --userns=keep-id --cap-add=NET_ADMIN --cap-add=NET_RAW \
@@ -131,14 +132,28 @@ podman run -it --rm --userns=keep-id --cap-add=NET_ADMIN --cap-add=NET_RAW \
   -v ~/pera-sandbox:/workspace -v pera-copilot-config:/home/vscode/.copilot \
   -w /workspace pera-sandbox run-copilot --login
 
-# normal sessions
-podman run -it --rm --userns=keep-id --cap-add=NET_ADMIN --cap-add=NET_RAW \
-  -v ~/pera-sandbox:/workspace -v pera-copilot-config:/home/vscode/.copilot \
-  -w /workspace pera-sandbox run-copilot
+# normal interactive sessions; replace the label with the approved run's label
+bash /mnt/c/work/pera/claude-sandbox/sandbox-record.sh \
+  --label TASK-1-R1 --workspace "$HOME/pera-sandbox" -- \
+  podman run -it --rm --name pera-copilot --userns=keep-id \
+    --cap-add=NET_ADMIN --cap-add=NET_RAW \
+    -v "$HOME/pera-sandbox:/workspace" -v pera-copilot-config:/home/vscode/.copilot \
+    -w /workspace pera-sandbox run-copilot
 ```
+
+Run that block in an interactive WSL terminal, not through a piped/non-interactive
+shell. The recorder creates a fresh private run directory under
+`${XDG_STATE_HOME:-$HOME/.local/state}/pera-sandbox-recordings`, prints its path,
+and retains terminal output, timing, launch/outcome metadata and hashes. Keep
+that directory outside every container mount and retain the selected CLI session
+events separately. See [the recorder contract](OPERATOR.md#record-an-interactive-launch-on-the-host)
+for incomplete captures, sensitive output and the actual-CLI demonstration still
+needed before relying on this layer. No image rebuild or prepare is needed.
 
 Model is pre-set to claude-opus-4-8 (check `/model`). Headless variant:
 `... run-copilot --autopilot -p "Convert EPD-xxx per the migration guide"`.
+That is an underlying-launcher option, not the interactive recorder recipe;
+headless evidence needs its own qualification.
 
 Copilot sessions allow GitHub's shared IP ranges, a wider surface than Claude's
 Anthropic allowlist. Deny rules and the policy hook reduce accidental writes but have

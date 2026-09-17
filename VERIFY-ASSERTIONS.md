@@ -666,6 +666,50 @@ this documentation change. JWA-2905 still requires task-specific preflight,
 human operation approvals and the evidence demonstration before its first run.
 The successful Phase 4 fixture evidence above is unchanged.
 
+### G1 verification guidance and G6 host recording, 2026-09-17
+
+The approved follow-up adds exit-status propagation, current-build artifact
+assertions and actual executed-test counts to `overlay/CLAUDE.md`. This changes
+the source payload only; no assembled workspace instruction files were refreshed.
+Application behavior and compliance with that guidance were not tested.
+
+`sandbox-record.sh` adds optional **host-side terminal recording** around an
+explicitly supplied launch command. It does not change either image-installed
+launcher, the firewall, policy hook, task controller or CLI version/model settings.
+It keeps invocation arguments, terminal output/timing and launch/recorder outcomes
+in fresh private directories, publishing hashes only after finalization succeeds.
+It does not copy auth volumes or export CLI sessions. A returned launch, including
+exit zero, is not evidence that an agent completed its brief or passed tests.
+
+Recorded against WSL `centos-9`, util-linux `script` **2.37.4**:
+`bash verify-recording.sh` passed **16 disposable local-PTY checks** covering
+argument preservation (quotes, spaces, shell metacharacters, empty and multiline
+arguments), terminal stdout/stderr, private permissions and hashes; launch exits
+42 and 125; hidden-input non-capture; live output flushing; an owned recorder's
+SIGTERM and partial retention; terminal Ctrl-C and resize propagation; non-TTY,
+unsafe-permission, symlink and workspace-overlap refusals; a recorder that exits
+zero without running its command; hash-publication failure; and repeated-label
+non-overwrite behavior; and default storage under a disposable XDG state directory.
+
+The Ctrl-C regression exposed Bash's ignored INT/QUIT dispositions on asynchronous
+commands. The recorder resets them with GNU `env --default-signal` before starting
+`script`, while retaining explicit stdin and signal forwarding to its own recorder.
+These are host PTY checks, not evidence about Copilot's UI or session-event schema.
+The verifier uses existing Python 3 standard-library PTY support, without an
+additional package, container, credentials, network access or agent session.
+
+Static scaffold assertions remain **21 passed, 1 known failure S7, 2 skips**.
+The S7 finding and absent shellcheck/VERSION are unchanged. No existing private
+evidence store was accessed; no ticket checkout was modified or used as a probe fixture.
+No image was rebuilt, workspace prepared, agent launched or JWA-2905 work dispatched.
+
+**Still pending:** the ticket lead must demonstrate this recorder with the actual
+intended interactive CLI, executable and guarded launch, correlate retained CLI
+events, and obtain human review. Normal exit/interruption, redraw/input behavior,
+and the output that the CLI actually emits cannot be established by local fixture
+success. Headless/subagent capture and complete authenticated activity logging
+remain outside this change. See `OPERATOR.md` for the capture and deployment contract.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is

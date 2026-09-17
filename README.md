@@ -224,12 +224,24 @@ podman run -it --rm --name pera-copilot --userns=keep-id \
   -v ~/pera-sandbox:/workspace -v pera-copilot-config:/home/vscode/.copilot \
   -w /workspace pera-sandbox run-copilot --login
 
-# Normal autonomous sessions (drop --login); headless: append --autopilot -p "task"
-podman run -it --rm --name pera-copilot --userns=keep-id \
-  --cap-add=NET_ADMIN --cap-add=NET_RAW \
-  -v ~/pera-sandbox:/workspace -v pera-copilot-config:/home/vscode/.copilot \
-  -w /workspace pera-sandbox run-copilot
+# Normal interactive session; replace TASK-1-R1 with the approved run label.
+bash /mnt/c/work/pera/claude-sandbox/sandbox-record.sh \
+  --label TASK-1-R1 --workspace "$HOME/pera-sandbox" -- \
+  podman run -it --rm --name pera-copilot --userns=keep-id \
+    --cap-add=NET_ADMIN --cap-add=NET_RAW \
+    -v "$HOME/pera-sandbox:/workspace" -v pera-copilot-config:/home/vscode/.copilot \
+    -w /workspace pera-sandbox run-copilot
 ```
+
+The host-only recorder retains private output/timing files, exact launch arguments,
+exit outcomes and hashes without changing guarded startup. It requires a WSL
+terminal; do not use this wrapper to claim headless capture is qualified.
+For headless use, the underlying launcher accepts `--autopilot -p "task"`, but
+establish that mode's evidence path separately.
+Follow [the recording and retention contract](OPERATOR.md#record-an-interactive-launch-on-the-host):
+keep storage outside every container mount, retain selected CLI events alongside
+the terminal record, and demonstrate the actual CLI/setup before ticket use.
+A zero launch exit is not proof that the agent's tests passed.
 
 The seeded `~/.copilot/settings.json` pins the model to **claude-opus-4-8** (verify with
 `/model` on first run — Enterprise policy must expose it). `--continue`/`--resume` work
@@ -354,6 +366,8 @@ separate decisions.
 | `container/certs/` | (generated) corp root CAs staged by new-sandbox.sh |
 | `overlay/CLAUDE.md` | Sandbox-adapted instructions the agent boots with |
 | `overlay/.claude/settings.json` | bypassPermissions + deny rules + native sandbox |
+| `sandbox-record.sh` | Optional WSL-host PTY recorder around an explicitly approved guarded launch; private output/timing, outcomes and hashes |
+| `verify-recording.sh` | Disposable local PTY checks for recording, signals, exit propagation and retention; no agent/container |
 | `verify-scaffold.sh` | Host-side static assertions |
 | `verify-firewall.sh`, `tests/firewall/` | E1 regressions in disposable containers, without workspace or credential mounts |
 | `SECURITY-REVIEW.md` | Original audit reconciliation, E1 commit/evidence record and deployment status |
