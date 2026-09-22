@@ -904,6 +904,61 @@ reproduction is needed; this result does not justify weakening the deny flags.
 Human confirmation of the interactive run's completion is not recorded as a
 separate human acceptance of this analysis or a complete sandbox security review.
 
+### Original-record inspection: correcting field-report G1, 2026-09-22
+
+The subsequent read-only inspection resolves the attribution that the probe alone
+could not. The original retained evidence is
+`~/.pera-evidence/JWA-2906-R1/session/events.jsonl`, session
+`a370a142-b366-4b3f-aa0b-d57bb00fe9c8`, CLI 1.0.83. All **15 entries** in its
+retained checksum manifest verified. The manifest SHA-256 is
+`e8ae6256f50c3b59298591009e174dd4e0166bd76431a1f67ccdb143fe4f2c51`;
+the event record SHA-256 is
+`cac0cadcd5f4b1fcecf338152ad40e06acbb83452c3bca2f7a20e9fe77c7516a`.
+These checks establish consistency with the retained manifest, not independent
+authenticity of an agent-writable record.
+
+All 158 tool starts and 158 completions had unique, matching `data.toolCallId`
+values. Joining on those values gives the following two calls, submitted together
+at approximately 05:30:12Z on 2026-09-18:
+
+| Call | Tool-call ID | Actual request and result |
+|---|---|---|
+| prj inspection | `toolu_01U9kCgy7s7vYdyQSKGMoFvR` | The command inspected `/workspace/prj` and ended with `git remote -v`. Denied with `error.code: denied`, citing `shell(git remote)`; no command exit status. |
+| Documentation inspection | `toolu_01GGiJfUi8zRZpDAHBAo8KFL` | Branch/log/status inspection ending with `git status --short \| head`. Allowed, with an explicit completion trailer reporting exit 0 for the composed command. |
+
+The actual Documentation command was:
+
+```bash
+cd /workspace/Documentation && git branch --show-current && git --no-pager log --oneline -3 && git status --short | head
+```
+
+The field report's version without the trailing `| head` occurs **zero times**
+as an exact submitted command in the original record. Its single matching prefix
+is the successful call above. Only the prj call has a `shell(git remote)` denial;
+the other two denials in the session are the documented escaped-quote hook vetoes.
+
+The denied completion event is `9df66850-1af1-422d-bed1-2fa173c05c10`.
+The successful Documentation completion is `8f6a6520-e607-4bd9-9279-3c57ae5f6e75`,
+whose **`parentId` points to that denied completion**, not to its own start.
+The two starts and their shared hook batch interleave with the completions.
+This demonstrates why event-history links or proximity cannot identify which
+request a result belongs to. The record establishes the report's misattribution,
+not the specific extraction method that produced it.
+
+**Disposition: withdraw the 2026-09-22 field-report G1 false-positive allegation.**
+The recorded prj denial matches the configured rule; the Documentation inspection
+was not denied. This is a reporting correction, not a permission-matcher fix.
+The earlier synthetic probe remains valid as recorded, but its model/session
+differences need not be investigated to explain this misattribution. No further
+authenticated probe, deny-rule change or image rebuild is warranted for this
+incident. This does not establish that every possible permission match is correct.
+
+`OPERATOR.md` now makes the session-scoped tool-call-ID join explicit and requires
+unmatched/ambiguous records to remain unresolved. The raw field report and original
+evidence are preserved unchanged. The ticket lead remains responsible for appending
+the corresponding erratum to its own ledger/audit records; this maintenance
+inspection did not edit the Documentation checkout or rewrite either prior account.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is

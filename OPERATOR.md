@@ -745,6 +745,17 @@ Raw session records may also contain prompts and persuasive implementation narra
 separate these where feasible, or disclose their necessary exposure. Do not replace
 raw evidence with the lead's asserted totals or conclusions.
 
+For Copilot session events, pair `tool.execution_start` and
+`tool.execution_complete` by **`data.toolCallId` within the same session**. Keep
+child-session identities separate. Do not pair by array position, timestamps,
+nearest preceding start or `parentId`: the latter links event history, which can
+interleave different calls. Require a unique start and completion for each paired
+call; report missing IDs, unmatched events and duplicate/ambiguous matches as
+unresolved instead of borrowing another call's outcome or assuming success.
+Use `hookInvocationId` to correlate hook lifecycle events separately. A hook can
+receive several tool calls in one batch; its successful completion is not proof
+that every tool was allowed or that any command exited zero.
+
 State what each count measures: tool calls, command executions, suite runs or
 executed specs. One loop in one tool call can execute several tests; an initial
 tool return can precede command completion. Inspect status propagation in the
