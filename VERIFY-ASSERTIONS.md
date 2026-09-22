@@ -959,6 +959,40 @@ evidence are preserved unchanged. The ticket lead remains responsible for append
 the corresponding erratum to its own ledger/audit records; this maintenance
 inspection did not edit the Documentation checkout or rewrite either prior account.
 
+### Approved G4/G6 housekeeping, 2026-09-22
+
+The human approved an exact-path archive, not deletion, of the two reported
+preparation leftovers: `.operation-b0081fbf-e0fa-47f7-8bf7-d75132166483`
+(19 files, 9,934 bytes) and JWA-2906's
+`stage-send-84a079bf-a58f-4351-ad9b-80ff556ed353` (one 61,185-byte packet).
+Captured requests tie them to the interrupted export/preview, and the staged
+packet is byte-identical to the published approved packet:
+`554d3f26a0c7afd571e17fc485f0fdb9d99048cd4b0418c6e6794dbe36d684c4`.
+
+The controller reported ready/clean candidate repositories, intact input snapshots,
+no active plan and no pending import. The archive revalidated exact inventories,
+published-state references, mount absence and recovery state while holding the
+existing task/workspace locks. Relevant inspected processes held no candidate
+references. Descriptor metadata for unrelated SSH/PAM services was inaccessible;
+this limitation was disclosed in the approval and receipt, not treated as an
+exhaustive system-wide open-file check.
+
+Both directories were renamed with their bytes/modes preserved into private
+`pera-sandbox-maintenance/JWA-2906-20260922` host state, outside controller state.
+Its 22 retained files include the inventory and receipt; the manifest SHA-256 is
+`f591cb82efd636a96e272be346558d0df171b125149b2795b33a87c8493e9051`,
+and the receipt SHA-256 is
+`00dfb91d344d2085722bc4d740e567336bc46d9b4ccdcad26b25802c2b4ef883`.
+Published task/plan/collection/recovery file hashes remained unchanged. A subsequent
+controller status again reported clean candidate heads and no pending operation.
+Context remained changed after legitimate host/sandbox work; that was not reset
+or silently reconciled as part of housekeeping.
+
+The original incomplete recording's output/timing hashes and metadata matched
+the existing retained evidence. It was left unchanged, with no replacement outcome,
+manifest or duplicate recording copy. The same maintenance receipt records this
+recheck; original capture completeness is not claimed.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is
