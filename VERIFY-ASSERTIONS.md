@@ -703,12 +703,99 @@ The S7 finding and absent shellcheck/VERSION are unchanged. No existing private
 evidence store was accessed; no ticket checkout was modified or used as a probe fixture.
 No image was rebuilt, workspace prepared, agent launched or JWA-2905 work dispatched.
 
-**Still pending:** the ticket lead must demonstrate this recorder with the actual
+**Pending at this checkpoint:** the ticket lead must demonstrate this recorder with the actual
 intended interactive CLI, executable and guarded launch, correlate retained CLI
 events, and obtain human review. Normal exit/interruption, redraw/input behavior,
 and the output that the CLI actually emits cannot be established by local fixture
 success. Headless/subagent capture and complete authenticated activity logging
 remain outside this change. See `OPERATOR.md` for the capture and deployment contract.
+
+### First live context-aware ticket: JWA-2906, reported 2026-09-22
+
+This is **attributed field evidence**, not a new execution of the application or
+controller suite by the scaffold-maintenance session. Sources are the ticket lead's
+`Sandbox-Operator-Findings-2026-09-22.md` and the JWA-2905 Documentation records:
+`02-planning/sandbox-pilot-log.md` and
+`03-tasks/JWA-2906-verified-time-workflow/audits/round-01-{review-packet,consolidated-findings,erratum}.md`.
+The raw field report remains untracked and unchanged; it is not required to run
+scaffold checks. The assessment read those records and current scaffold source,
+but did not rehash the private collection/session artifacts or rerun application
+acceptance. Historical entries above remain point-in-time records.
+
+The ledger records the G1 instruction refresh and a three-run actual interactive
+Copilot recorder demonstration before the ticket run, with human review accepted.
+Those later activities were performed by the ticket/operator workflow, not by the
+source-only G1/G6 implementation recorded above.
+
+| Identity | Recorded value |
+|---|---|
+| Task / round / contract | `JWA-2906`, R1, private record v2, context revision 1 |
+| Approved plan | `f1ec158544e9493c701c61bed9571fb3afbc4dcc507c9153c96fa35496f9f4d5` |
+| Source Documentation | `ec4e2eb42be4c1261151b4e6f3f6aae71bd2cf25` |
+| Image | `sha256:893d19013d16066cacf386c442fd9d906f70792da74a046027f996ca7fed00d6` |
+| Runtime | Copilot CLI 1.0.83, interactive guarded launch with host recording; retained warmed workspace |
+| Session | `a370a142-b366-4b3f-aa0b-d57bb00fe9c8` |
+| Candidate prj | `48815eba7f6c3d64e9b5620949093b9556d57faf` |
+| Candidate Documentation | `f99834d180d14e097a456ec836db023b225f5795` |
+| Collection | `2e8687c718ee3df6afa1e207b89eb9619ceaaae2bfeb8a7761edc3c950e77518` |
+| Root manifest SHA-256 | `af884a64c080933a1361e4efbb10e02ea6b18db23568abde801db308c7854abf` |
+
+Reported outcomes:
+
+- Only Documentation imported R1; prj stayed at its code baseline during send.
+  Both selected document snapshots matched approved hashes. The agent used the
+  snapshot paths and respected the README's section boundaries. Section ownership
+  was prose guidance, not controller or filesystem enforcement.
+- Both candidate trees were clean; all nine collection artifacts and both bundles
+  were verified by the lead. Code-only host integration is recorded as `32818a0a2`,
+  with a subsequent host suite run and deployment reported. Collection itself
+  explicitly reported `applicationTestsRun: false`.
+- The event record reports 158 started/completed tool calls and routine session
+  shutdown. The suite result was `TOTAL: 270 SUCCESS`, `EXIT=0`, up from 250.
+  These counts and exit evidence do not establish all acceptance criteria.
+- An interrupted preparation was retried without reported repository mutation.
+  Retained staging remained. This was not interrupted import/recovery coverage;
+  deterministic plan identity is already covered separately by fixture regressions.
+- A host restart after the agent's clean exit left terminal output, timing and
+  launch metadata but no recorder outcome or final checksum manifest. The lead
+  preserved and identified an incomplete capture, hashing surviving output later.
+  Those later hashes pin the recovered bytes, not capture-time completeness.
+- Execution evidence upheld omitted failed restoration outcomes and corrected the
+  lead's own false discrepancy: nine test executions occurred in eight tool calls
+  because one call contained a two-iteration loop. The erratum preserves the
+  reporting criterion's failure and the unresolved intermediate-commit question.
+  The two-pass review used the same reviewer resumed for pass 2, not two independent
+  opinions.
+
+The linked audit also found that criteria extraction omitted or weakened governing
+requirements, and reviewer startup context exposed campaign narrative. The operating
+contract now requires source-bound, requirement-preserving criteria; inspection of
+reviewer startup context; and traceable runtime evidence in pass 1. Reporting-only
+errata, section-ownership limits, explicit-plan approval wording and references to
+excluded harvest material are clarified. These are procedural improvements, not
+new runtime enforcement.
+
+Follow-up findings use **2026-09-22 field-report G1-G10**, distinct from the earlier
+probe-gap numbering. The reported read-only Git chain was denied citing
+`shell(git remote)`. A local evaluation on 2026-09-22 of that exact command as input
+to the current `guard-shell-command.js` returned `{}` (no veto); the command itself
+was not executed. This does not reproduce the CLI permission matcher or establish
+its cause. The launcher deny flags and policy are unchanged pending a bounded
+pinned-version reproduction. Escaped-quote denials remain intended policy behavior.
+
+No shell timeout was reported in this Angular run. That corrects the earlier
+prediction that every invocation would exceed 60 seconds; it does not qualify all
+Angular runs or Maven, nor address EEP-24's separate slow controller-preview
+observation. A canonical brief remaining stale is consistent with append-only
+snapshot delivery; the path map is guidance, not read isolation. Hiding or renaming
+canonical files, automatic pruning and crash-time hash guarantees are not implemented.
+
+Live coverage still excludes paired repository imports/partial retries, interrupted
+import recovery, a second context-aware round, Maven under the guard, LFS,
+reduced-access cases, concurrent tasks, another workspace/image, headless/subagent
+evidence and Claude Code under this context-aware contract. Existing disposable
+regressions cover some of these separately; do not label them live-ticket evidence.
+The CLI version was held by the operating procedure, not a new enforced version pin.
 
 ## Deliberately not asserted
 

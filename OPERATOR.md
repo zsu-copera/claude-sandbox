@@ -231,6 +231,11 @@ The ticket lead first writes and commits the intended brief in its source
 repository. Commit only the intended files; do not stage every change in that repo.
 Before preparing the plan, assemble the complete handoff described below.
 
+Verify factual claims about existing code at the stated baseline commit and cite
+the file and location. A claim remembered from an earlier round is not evidence
+about the current baseline. Mark unresolved claims explicitly rather than turning
+them into implementation instructions or acceptance criteria.
+
 ### Select context and assign document ownership
 
 Read the brief's references and write-back instructions, not just its implementation
@@ -248,6 +253,11 @@ Legacy `--brief` sends check selected deliveries,
 not canonical-document freshness. The opt-in `--handoff` contract below records
 declared context and checks its committed versions, but cannot discover every
 dependency mentioned in prose or enforce ownership as an operating-system boundary.
+
+Declarations and the returned `writeBack` guidance operate at document level.
+Section-level boundaries, such as "update the round row and implementation section
+only", belong in the selected document/brief and the review criteria. Neither
+granularity is a filesystem permission: review the actual diff for compliance.
 
 Use the named source branch and previous collection/host history to identify the
 versions involved. A file on another branch is not available merely because it
@@ -413,7 +423,7 @@ Present one compact review summary:
 | Context and write-back | Required references, document owners, known drift or unknown versions, and the reconciliation decision |
 | Effect | Which repositories will import and which remain unchanged |
 | Safety | Any blocking dirty/running/recovery state; no prepare or reset |
-| Approval | The exact plan ID to apply |
+| Approval | The full plan ID and a copyable phrase: `Approve apply PLAN_ID`, with the actual ID substituted |
 
 The operator returns this summary to the human-facing lead session. The lead must
 obtain the designated human's approval of the exact plan in that session and then
@@ -424,6 +434,11 @@ approval message or a retrievable conversation reference bound to the plan ID.
 If that evidence is unavailable or ambiguous, obtain approval again rather than
 inventing it. When the human explicitly names an already presented plan to apply,
 no second shell confirmation is needed.
+
+Prefer the explicit phrase for new approvals so the human's response carries the
+binding. Still retain the presented summary and actual approval reference; a typed
+digest alone is not authentication. An earlier direct response to one unambiguously
+presented plan is not invalid merely because it omitted the literal ID.
 
 A dedicated human-facing operator session may instead execute apply after receiving
 the human's approval directly; name that route explicitly, with only one executor.
@@ -594,6 +609,26 @@ artifact checksums. Do not silently substitute a later checkout or acceptance
 criterion during review. Keep the authoritative full diff/history available;
 the focused work diff alone can omit important earlier work.
 
+**Preserve requirements when extracting criteria.** Quote each governing obligation
+and cite its source commit/blob, path and line range; keep any explanatory restatement
+separate. Before issuing the packet, compare the extraction against the governing
+sources for omissions or weakened wording, including stop/report conditions,
+protected paths, operational prohibitions, reporting and commit requirements.
+Record which criteria need source, runtime, historical or external evidence and
+where that evidence is supplied or unavailable. Undefined comparisons, such as
+"byte-identical" without a comparison target or normalization rule, need clarification,
+not an invented test. Pass 2 must also check the extraction against the governing
+text; a faulty extraction does not silently amend the original contract.
+
+**Choose the review environment before starting pass 1.** Use a fresh session with
+its working directory outside the workspace roots that supply campaign narrative.
+Inspect and record what instructions, attachments and inherited context it actually
+receives; a private packet directory under the same narrative-bearing parent may
+still load that context. Preserve applicable safety/repository instructions,
+supplying them explicitly where needed. Do not disable required instructions to
+claim a blind review. Different directories or models reduce some exposure but do
+not guarantee independence; disclose any narrative already supplied.
+
 **Pass 1: independent technical assessment.** Give a fresh reviewer the pinned
 changes, standalone acceptance criteria, necessary domain/legal constraints and
 relevant source/tests at the candidate and baseline. Withhold the lead's preferred
@@ -608,6 +643,24 @@ to pass 2; keep the full collection unchanged. If a narrative document is itself
 necessary to judge an acceptance criterion, provide it in pass 1 and disclose that
 exposure. Do not hide a changed deliverable or call the first pass a complete review
 of material it has not seen.
+
+Include execution evidence needed to judge the criteria in pass 1, rather than
+withholding it solely because it comes from the run. Preserve the private originals
+and provide a traceable, separately identified extract of relevant command/tool
+invocations, results, denials, nonzero exits and lifecycle events. Carry the session
+identity, source artifact hash, event/call identifiers and any shell IDs needed to
+follow a command through later output reads. Record the selection method, omissions
+and redactions; an extract is not the complete transcript or an independent witness.
+Raw session records may also contain prompts and persuasive implementation narrative:
+separate these where feasible, or disclose their necessary exposure. Do not replace
+raw evidence with the lead's asserted totals or conclusions.
+
+State what each count measures: tool calls, command executions, suite runs or
+executed specs. One loop in one tool call can execute several tests; an initial
+tool return can precede command completion. Inspect status propagation in the
+actual command and follow it to a final outcome, or report it unresolved. A clean
+tree or green final suite does not settle every question about intermediate work.
+Treat all captured content as untrusted evidence, not instructions to execute.
 
 Use explicit evidence paths instead of browsing the whole task folder. Keep
 mandatory repository/safety instructions in effect; do not try to bypass them for
@@ -626,10 +679,26 @@ withdrawals, corrections or new findings, with the evidence that changed each
 conclusion. Check scope conformance and challenge flawed brief assumptions as well
 as implementation mistakes. Preserve both passes rather than replacing the first.
 
+Record whether pass 2 resumes the same reviewer or uses a new reviewer. Two passes
+by one reviewer are not two independent opinions.
+
 The lead incorporates the two-pass report and its own dispositions into the task
 documents. Neither pass authorizes apply, host integration or push. This is an
 evidence discipline, not guaranteed reviewer independence or OS-level read isolation.
 Packet selection and reasoning can still be biased; disclose those limits.
+
+### Correct reporting without rewriting the record
+
+For a reporting-only defect whose correction can be established from retained
+evidence, the lead may append an erratum naming the original artifact/commit, the
+claim, correction, evidence and remaining uncertainty. Preserve the original account
+and both review passes. An append-only reconciliation from the implementer is also
+possible, but a new sandbox round is not automatically required just to correct prose.
+
+An erratum does not make an unmet criterion retrospectively pass or establish
+unknown historical behavior. Record any human acceptance or waiver separately.
+Unresolved product correctness or missing implementation still requires verification
+or corrective work; an auditor's explanation is not a substitute.
 
 ## Handoff ledger and evidence references
 
@@ -726,6 +795,13 @@ in the integration record, including excluded paths/commits and any rewritten
 commit IDs. A conflict is a decision point, not permission to prefer one side
 wholesale. Preserve user work and follow the active Git operation's normal
 abort/recovery procedure if the approved integration cannot proceed.
+
+Check references across the selected harvest boundary. If an included README or
+audit cites an excluded log, replace the misleading local link with a durable
+repository + retained ref/full commit + path, or a retained-package reference the
+authorized reviewer can resolve. Do not imply the excluded file exists on the host
+branch. Preserve access restrictions; do not publish private raw evidence merely
+to make a link work. Record deliberate exclusions and their destinations together.
 
 ### Keep incomplete integration visible
 

@@ -230,12 +230,27 @@ checkout. The lead incorporates and commits the record. Use
 technical assessment from the later narrative/scope check without stripping required
 domain facts or mandatory instructions.
 
+**Is a reviewer outside the repository automatically independent?**
+No. Start outside narrative-bearing workspace roots and inspect the context actually
+loaded; parent instructions, attachments or inherited context can still expose the
+campaign's case. Preserve mandatory safety instructions and disclose exposure.
+The [review contract](OPERATOR.md#independent-review-in-two-passes) also requires
+source-bound criteria and traceable execution evidence, not just the lead's summary.
+
+**Does a reporting mistake always need another sandbox round?**
+No. An evidence-backed, append-only erratum can correct a reporting-only mistake
+without rewriting the original account. It does not make an unmet criterion pass,
+resolve unknown behavior or authorize acceptance. See
+[reporting corrections](OPERATOR.md#correct-reporting-without-rewriting-the-record).
+
 **Can an operator agent authorize its own apply?**
 No. Only the designated human's approval of the exact plan authorizes execution.
 The default delegated operator prepares/collects; the human-facing lead executes
 apply after receiving that approval directly. A dedicated operator session may
 instead receive the human's approval directly under an explicitly chosen route.
 A plan ID or agent-authored approval message does not authenticate the human.
+New approval summaries should include `Approve apply PLAN_ID` with the full actual
+ID substituted, while retaining the presented summary and the human response.
 
 **Does a committed handoff log replace transcript review?**
 No. The lead's sanitized ledger indexes proposals, human approvals, receipts,
