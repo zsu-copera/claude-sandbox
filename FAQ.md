@@ -262,6 +262,19 @@ a complete transcript was captured. Follow the
 do not copy entire auth volumes, commit raw transcripts or claim unavailable
 evidence was reviewed.
 
+**Can I finish a recorder's missing manifest after a crash?**
+Not as if the original capture completed. Preserve the original directory and,
+after verifying inactivity and obtaining approval, create a separately identified
+recovery receipt with hashes of the surviving bytes. Do not synthesize the missing
+outcome or overwrite original artifacts. See
+[interrupted recordings](OPERATOR.md#preserve-an-interrupted-recording).
+
+**Can I remove an old `.operation-*` or `stage-send-*` directory?**
+Not based on age or matching packet bytes alone. The lead must establish ownership,
+inactivity, absence of mount/recovery dependencies and approve exact-path disposal
+with the human; recheck under the relevant locks. There is no bulk prune command.
+See [orphaned preparation staging](OPERATOR.md#inspect-and-dispose-of-orphaned-preparation-staging).
+
 **An import was interrupted. Should I delete its Git locks?**
 No. Use the tool's `recover` operation with the original packet and current expected
 HEAD. It either removes the exact pre-commit round snapshot or finishes a committed

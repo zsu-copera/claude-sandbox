@@ -183,6 +183,47 @@ check redraw/input, Ctrl-C, resize, retained output and session association.
 A periodic-output fixture can establish whether in-flight output reaches each
 capture surface; silence from `sleep` alone cannot answer that question.
 
+### Preserve an interrupted recording
+
+The recorder has no recovery/finalize verb. A later launch creates a new recording;
+it must not silently complete an older one. The lead is the evidence custodian and
+can prepare a read-only inventory, then obtain approval for the exact private
+recovery receipt/copies to create. Do not relaunch an agent to manufacture a missing
+ending or delete the incomplete recording.
+
+Establish that the specific recorder, launch/container and any other writer to that
+directory are stopped, using process/container identity rather than an old PID or
+label alone. Do not stop another session to make this true. Resolve the original
+directory outside container mounts and controller state; verify ownership/private
+permissions and reject symlinks, special files or unexpected hard links. If the
+recording is still changing or its ownership is uncertain, leave it untouched and
+report the blocker.
+
+Under the approved scope, retain the original directory unchanged. Create a
+separate, new private recovery receipt and any selected copies outside the
+workspace, all source checkouts, container mounts and controller state. Inventory
+the exact surviving regular files, byte lengths and hashes, recording the time
+of this observation. Detect changes during reading/copying and stop if they occur;
+verify any copied bytes against their source hashes. Inspect terminal content as
+escaped data, not executable terminal input. Do not copy the whole CLI auth volume.
+
+The receipt must distinguish:
+
+| Field | Required meaning |
+|---|---|
+| Original identity | Exact recording directory, label, available launch metadata and original outcome/checksum files or their absence. |
+| Observation | Recovery time, custodian, inactivity evidence, per-file hashes and any selected copy locations. |
+| Correlation | Established CLI session/container references and evidence for the association; unknowns remain unknown. |
+| Disposition | Original capture remains incomplete; name missing artifacts and distinguish the launch/session outcome from recorder finalization. |
+| Review | Human approval/review references and any limitation on accepting the recovered material. |
+
+Do not create replacement `outcome.json` or `SHA256SUMS` inside the original run
+directory, invent missing exit statuses, or describe a later manifest as the one
+the recorder published. Recovery-time hashes detect changes after that observation;
+they do not establish capture-time integrity, completeness, authenticity or
+durability across another host failure. Append the sanitized receipt reference to
+the ledger. No reset, cleanup or acceptance follows automatically from recovery.
+
 ### Deploy the verification guidance without resetting a workspace
 
 `overlay/CLAUDE.md` now tells the sandbox agent to preserve verification exit
@@ -557,6 +598,55 @@ or establishes that undeclared references are current.
 
 Agent launch remains the existing `run-agent` or `run-copilot` workflow. This controller
 does not reopen a locked container or add automatic reviewer/model behavior.
+
+### Inspect and dispose of orphaned preparation staging
+
+There is no `prune` command. This procedure covers only a specifically identified
+controller `.operation-<uuid>` directory or task-local `stage-send-<uuid>` directory.
+Names, age, empty result files or equality with a published packet do not establish
+that a directory is disposable. Published plans, packets, receipts, collections,
+`stage-collect-*`, workspace inputs, locks and low-level recovery journals are
+outside this procedure.
+
+The operator helper may return a read-only inventory; the human-facing lead owns
+the disposition and executes it only after direct human approval of the exact
+paths and action. First:
+
+1. Resolve each candidate under the configured controller-state root and associate
+   it with its actual task/operation from captured metadata. Verify private ownership,
+   directory/file types and the bounded inventory; do not traverse symlinks or
+   delete a directory of unknown provenance.
+2. Establish that its wrapper/controller and operation containers are absent, and
+   that no container, including a stopped container, mounts the candidate or an
+   overlapping parent/child path. Inspect operation labels and mount identity, not
+   just a remembered container name. If a live owner or uncertain cleanup exists,
+   retain the directory and use the normal diagnosis path.
+3. Check task status and low-level recovery state through the trusted wrappers.
+   Identify any active/partial send, pending import or requested retry that could
+   need these bytes. Compare against published plan packets and retained receipts
+   when explaining duplication, but never use byte equality as the sole disposal
+   rule. Unknown references or unresolved recovery block disposal.
+4. Return a proposal listing exact candidates, ownership/inactivity evidence,
+   relevant plan/packet identities, what private evidence must be retained, and
+   the intended archive or deletion action. Retain unique failure-diagnostic
+   evidence before proposing deletion; do not commit raw operation contents.
+
+Approval is conditional on the inventory remaining unchanged. Before executing,
+coordinate a pause in other operations and hold the existing task lock plus the
+applicable workspace lock(s), in the controller's task-before-workspace order.
+Revalidate ownership, inventory, mounts, task/plan references and recovery state
+while those locks are held. Do not recursively invoke controller operations under
+locks they also need; obtain initial status beforehand and recheck its underlying
+state without mutating it. Locks do not coordinate arbitrary manual writers, so
+an uncertain writer remains a blocker.
+
+If any fact changed or a lock is owned, stop rather than force acquisition, kill
+an owner, delete a lock or expand the approved scope. Operate only on the exact
+approved directories, never a wildcard or a state/workspace root. An archive
+destination must be new private host storage outside workspaces/controller state,
+with verified retained bytes before source deletion. Record the resulting action
+and retained evidence in the ledger. This is manual, explicitly scoped maintenance,
+not authorization to run a bulk cleanup or to remove recovery state to clear an error.
 
 ## Collect for external audit
 

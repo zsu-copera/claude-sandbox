@@ -797,6 +797,34 @@ evidence and Claude Code under this context-aware contract. Existing disposable
 regressions cover some of these separately; do not label them live-ticket evidence.
 The CLI version was held by the operating procedure, not a new enforced version pin.
 
+### Bounded maintenance follow-up, 2026-09-22
+
+`OPERATOR.md` now distinguishes an independently identified recovery receipt for
+an incomplete recording from original recorder finalization. It also defines
+inspection/approval conditions for exact `.operation-*` and `stage-send-*`
+disposal, excluding live owners, overlapping mounts, pending recovery, published
+artifacts, collection staging and lock files. Both procedures require preserving
+relevant evidence and rechecking current state; they add no automatic recovery or
+garbage-collection command. No real recording was finalized, staging removed or
+private artifact copied while writing these procedures. They have not been exercised
+against the reported leftovers.
+
+The initial CLI-denial reproduction is scoped to a new disposable repository and
+an interactive recorded session on the unchanged guarded 1.0.83 launcher: compare
+the exact reported read-only chain with its component commands and a read-only
+remote-listing control. No push/remote mutation or guard weakening is needed for
+that initial probe. Read-only preflight confirmed the reported image ID is still
+available and the config volume exists, without inspecting its contents.
+No authenticated probe has been launched; mode-specific execution, evidence
+custody and exact fixture cleanup still require a separate approval.
+
+Documentation checks: `verify-scaffold.sh` retains the baseline result of
+21 passed, S7 failed, 2 skips. Besides the longstanding defaults, S7 also reports
+literal historical paths in the newly supplied, unchanged untracked field report.
+Those report lines predate this closeout; neither the report nor the assertion was
+altered to hide them. No runtime regression suite or application build was needed
+for these documentation-only changes.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is
