@@ -815,8 +815,9 @@ the exact reported read-only chain with its component commands and a read-only
 remote-listing control. No push/remote mutation or guard weakening is needed for
 that initial probe. Read-only preflight confirmed the reported image ID is still
 available and the config volume exists, without inspecting its contents.
-No authenticated probe has been launched; mode-specific execution, evidence
-custody and exact fixture cleanup still require a separate approval.
+At this documentation checkpoint, no authenticated probe had been launched;
+mode-specific execution, evidence custody and exact fixture cleanup still required
+a separate approval. The subsequent approved probe is recorded below.
 
 Documentation checks: `verify-scaffold.sh` retains the baseline result of
 21 passed, S7 failed, 2 skips. Besides the longstanding defaults, S7 also reports
@@ -824,6 +825,84 @@ literal historical paths in the newly supplied, unchanged untracked field report
 Those report lines predate this closeout; neither the report nor the assertion was
 altered to hide them. No runtime regression suite or application build was needed
 for these documentation-only changes.
+
+### Git-denial probe: not reproduced, 2026-09-22
+
+Following separate human approval, a fresh synthetic Git repository was mounted at
+`/workspace/Documentation` in a disposable container. It contained one synthetic
+commit, no remotes and no application/ticket data. The retained ticket workspace
+was not mounted. The human ran the interactive launch and confirmed exit; the
+maintenance session prepared the fixture and retained/analyzed the resulting
+evidence. No additional variants or second authenticated run were attempted.
+
+| Identity | Observed value |
+|---|---|
+| Probe | `GIT-DENIAL-20260922` |
+| Image | `sha256:893d19013d16066cacf386c442fd9d906f70792da74a046027f996ca7fed00d6` |
+| CLI | Image-baked Copilot 1.0.83; confirmed offline and in `session.start` |
+| Launch | Unchanged `run-copilot` and policy, all deny flags retained, host recorder, interactive `--interactive` prompt |
+| Model on all five tools | `claude-sonnet-5` after automatic resolution from the seeded default |
+| Session | `a946fb1d-29cf-4431-8c16-4056e181a94c` |
+| Recording | `GIT-DENIAL-20260922-20260922T173508Z-2Zpnna` |
+| Synthetic fixture HEAD | `84a19b3aa8b467be8bc83ee76410c39d4e085c61` |
+| Events SHA-256 | `b71f102fa79b528022021e8e1cd46aca6b11fa2912cebca5b653bfe4a8467f0c` |
+| Private evidence manifest SHA-256 | `3b0bd2686a426adf38c11cbb58c6a9c73c51b1b256d051665f61548a70a4b089` |
+
+The captured user prompt matched the prepared prompt. All five `bash` calls were
+submitted exactly as specified, in order, with five paired completions, five hook
+invocations and no extra tool calls. Each case began with
+`cd /workspace/Documentation &&`; the commands after that common prefix were:
+
+| Case | Command | Observed outcome |
+|---|---|---|
+| A | `git branch --show-current && git --no-pager log --oneline -3 && git status --short` | Executed, explicit completion trailer exit 0 |
+| B | `git branch --show-current` | Executed, explicit completion trailer exit 0 |
+| C | `git --no-pager log --oneline -3` | Executed, explicit completion trailer exit 0 |
+| D | `git status --short` | Executed, explicit completion trailer exit 0 |
+| E | `git remote -v` | Denied, `error.code: denied`; no command exit status |
+
+E's verbatim reason was:
+
+```text
+Permission to run this tool was denied due to the following rules: `shell(git remote)`
+```
+
+This positive control shows the deny rule was active; the exact chain reported
+as a false positive in JWA-2906 was allowed.
+No guard or permission override was applied after a denial.
+
+Session association used before/after config-volume listings: exactly one new
+session directory and process log. The session ended with `shutdownType: routine`.
+The recorder returned command/recorder/wrapper status 0, with no interruption, and
+all six artifact checksums verified. Explicit completion trailers established the
+four command exits; neither tool `success: true` nor absent failure metrics was
+treated as proof of an exit code.
+
+Private artifacts remain under the probe-specific
+`pera-sandbox-probes/git-denial-20260922-DuaW0m` state directory: selected session
+events/metadata/process log, the fixed prompt and launch preparation, correlated
+per-case results, recorder output/timing and a 28-artifact manifest. They are
+readable by the normal host user with private permissions. Only selected artifacts
+were copied, not the auth/config volume. Existing auth state was used for the normal
+provider connection and gained the new session's state.
+
+Before cleanup, an offline, read-only container confirmed the fixture HEAD was
+unchanged and its worktree clean. Its synthetic content also matched the retained
+seed; no container mounted it. Only the disposable Git metadata and fixture file
+were removed, followed by their empty parent directories. The private recording
+and evidence were retained; no ticket checkout, prior evidence or running unrelated
+container was modified.
+
+**Conclusion: the reported false positive was not reproduced, not fixed or
+disproved.** This was a new session and synthetic repository, not the original
+task/history. The observed model was `claude-sonnet-5`, whereas the ticket report
+records `claude-opus-5`; the prompt was automatically submitted in interactive
+mode rather than manually pasted. Those differences are recorded, not asserted
+as causes. The original incident remains unresolved. Inspect its exact request
+and permission-event provenance before deciding whether a further approved
+reproduction is needed; this result does not justify weakening the deny flags.
+Human confirmation of the interactive run's completion is not recorded as a
+separate human acceptance of this analysis or a complete sandbox security review.
 
 ## Deliberately not asserted
 
