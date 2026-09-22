@@ -1110,6 +1110,203 @@ test('context controller running and dirty status never claim fresh canonical ob
     assert.throws(() => contextSend(f), /running/);
 });
 
+test('launch handoff renders approved paths and current heads without mutating state or repositories', t => {
+    const f = setup(t);
+    const literal = 'references/literal `pipe|quote".md';
+    commit(f.docsSource, literal, 'Reference bytes, not launch instructions\n');
+    f.register();
+    const first = contextSend(f, handoff(f, { documents: [sharedReadme(),
+        { repository: 'Documentation', path: literal, role: 'reference', reason: 'Read the selected reference' }] }));
+    apply(f, first);
+    const before = { registry: tree(f.registry), workspace: tree(f.workspace), source: tree(f.source), docs: tree(f.docsSource) };
+    f.calls.length = 0;
+    const result = f.controller().launchHandoff();
+    assert.equal(result.status, 'launch-handoff');
+    assert.equal(result.planId, first.planId);
+    assert.equal(result.context.revision, 1);
+    assert.equal(result.context.status, 'unchanged');
+    assert.equal(result.context.observation, 'current');
+    assert.equal(result.launchesAgent, false);
+    assert.equal(result.repositories.prj.head, git(f.target, 'rev-parse', 'HEAD'));
+    assert.equal(result.repositories.Documentation.branch, 'refs/heads/sandbox-fixture');
+    assert.ok(result.text.includes(JSON.stringify('/workspace/prj/sandbox-rounds/TASK-1/R1/files/briefs/first brief.md')));
+    assert.ok(result.text.includes(JSON.stringify(`/workspace/Documentation/sandbox-rounds/TASK-1/R1/files/${literal}`)));
+    assert.match(result.text, /possibly stale canonical copy/);
+    assert.match(result.text, /not approval to launch/);
+    assert.match(result.text, /Unselected references were not refreshed/);
+    assert.match(result.text, /canonical write-back: none/);
+    assert.match(result.text, /Approved handling: edit-canonical/);
+    assert.deepEqual(f.controller().launchHandoff(), result);
+    assert.ok(f.calls.every(call => call.operation === 'image' || call.operation === 'source'
+        || call.operation === 'round' && call.args.mode === 'inspect'));
+    assert.deepEqual({ registry: tree(f.registry), workspace: tree(f.workspace), source: tree(f.source), docs: tree(f.docsSource) }, before);
+});
+
+test('launch handoff requires applied v2 context and refuses pending or partial sends', t => {
+    const f = setup(t);
+    f.register();
+    assert.throws(() => f.controller().launchHandoff(), /fully applied context-aware/);
+    const first = contextSend(f);
+    assert.throws(() => f.controller().launchHandoff(), /fully applied context-aware/);
+    apply(f, first);
+    const next = contextSend(f, handoff(f, { documents: [{ ...sharedReadme(), reason: 'Amended declaration reason' }] }));
+    const record = tree(f.registry);
+    assert.throws(() => f.controller().launchHandoff(), /pending or partial/);
+    assert.deepEqual(tree(f.registry), record);
+    apply(f, next);
+    commit(f.source, 'briefs/first brief.md', 'Next code brief\n');
+    commit(f.docsSource, 'review.md', 'Next docs brief\n');
+    const pending = contextSend(f);
+    f.hook = (operation, args) => {
+        if (operation === 'round' && args.mode === 'apply' && args.repository === 'Documentation') throw new Error('fixture interruption');
+    };
+    assert.throws(() => apply(f, pending), /fixture interruption/);
+    const partial = tree(f.registry);
+    assert.throws(() => f.controller().launchHandoff(), /pending or partial/);
+    assert.deepEqual(tree(f.registry), partial);
+});
+
+test('launch handoff refuses changed source briefs and canonical documents but permits unrelated commits', t => {
+    const f = setup(t);
+    f.register();
+    apply(f, contextSend(f));
+    commit(f.docsSource, 'unselected.md', 'Unrelated source content\n');
+    assert.equal(f.controller().launchHandoff().status, 'launch-handoff');
+    commit(f.docsSource, 'review.md', 'Changed selected brief\n');
+    const record = tree(f.registry);
+    assert.throws(() => f.controller().launchHandoff(), /Context changed since/);
+    assert.deepEqual(tree(f.registry), record);
+    apply(f, contextSend(f));
+    commit(f.target, 'README.md', 'Canonical write-back after approval\n');
+    assert.throws(() => f.controller().launchHandoff(), /Context changed since/);
+});
+
+test('launch handoff refuses dirty running busy recovery and switched-branch repositories', t => {
+    const f = setup(t);
+    f.register();
+    apply(f, contextSend(f));
+    const record = tree(f.registry);
+    for (const status of ['dirty', 'running', 'busy', 'recovery-required', 'branch-switched']) {
+        f.after = (operation, args, result) => {
+            if (operation === 'round' && args.mode === 'inspect' && args.repository === 'prj') {
+                if (status === 'branch-switched') result.branch = 'refs/heads/other';
+                else result.status = status;
+            }
+        };
+        assert.throws(() => f.controller().launchHandoff(), /prj is|branch changed/);
+    }
+    assert.deepEqual(tree(f.registry), record);
+});
+
+test('launch handoff preserves host deferral and reused paths across metadata-only approvals', t => {
+    const f = setup(t);
+    f.register();
+    commit(f.source, 'README.md', 'Host amendment awaiting reconciliation\n');
+    const value = handoff(f, { decisions: [readmeDecision('defer-to-host', 'Leave the canonical file with its host owner')] });
+    const first = contextSend(f, value);
+    apply(f, first);
+    let result = f.controller().launchHandoff();
+    assert.match(result.text, /Role: shared; canonical write-back: host/);
+    assert.match(result.text, /Approved handling: defer-to-host/);
+    assert.match(result.text, /Leave canonical write-back to the host/);
+    const second = contextSend(f, handoff(f, {
+        documents: [{ ...sharedReadme(), role: 'host-owned', reason: 'Host owns the canonical document' }],
+    }));
+    assert.equal(second.round, null);
+    apply(f, second);
+    result = f.controller().launchHandoff();
+    assert.equal(result.round, null);
+    assert.equal(result.context.revision, 2);
+    assert.match(result.text, /Approval round: metadata-only/);
+    assert.match(result.text, /Role: host-owned; canonical write-back: host/);
+    assert.ok(result.context.pathMap.every(item => item.deliveryPlanId === first.planId));
+    assert.ok(result.text.includes(`Delivery plan: ${first.planId}; round: "sandbox-rounds/TASK-1/R1"`));
+});
+
+test('launch handoff carries explicit reconciliation retention and initialization decisions', t => {
+    for (const action of ['reconcile-in-sandbox', 'retain-sandbox', 'initialize-from-source']) {
+        const f = setup(t);
+        f.register();
+        if (action === 'initialize-from-source') {
+            git(f.target, 'rm', 'README.md');
+            git(f.target, 'commit', '--quiet', '-m', 'Remove canonical fixture README');
+        } else commit(f.source, 'README.md', 'New source README\n');
+        const plan = contextSend(f, handoff(f, { decisions: [readmeDecision(action)] }));
+        apply(f, plan);
+        const result = f.controller().launchHandoff();
+        assert.ok(result.text.includes(`Approved handling: ${action}.`));
+        assert.match(result.text, /Role: shared; canonical write-back: sandbox/);
+        assert.ok(result.text.includes(JSON.stringify(readmeDecision().reason)));
+    }
+});
+
+test('launch handoff supports legacy deliveries after explicit metadata-only v2 opt-in', t => {
+    const f = setup(t);
+    f.register();
+    const legacy = send(f);
+    apply(f, legacy);
+    const optIn = contextSend(f, handoff(f, { documents: [] }));
+    assert.equal(optIn.round, null);
+    apply(f, optIn);
+    const result = f.controller().launchHandoff();
+    assert.equal(result.planId, optIn.planId);
+    assert.ok(result.context.pathMap.every(item => item.deliveryPlanId === legacy.planId));
+    assert.ok(result.text.includes(`Delivery plan: ${legacy.planId}`));
+});
+
+test('launch handoff refuses corrupt retained input image drift and unavailable sources', t => {
+    const f = setup(t);
+    f.register();
+    apply(f, contextSend(f));
+    const record = tree(f.registry);
+    f.after = (operation, args, result) => {
+        if (operation === 'round' && args.mode === 'inspect' && args.repository === 'prj') result.rounds[0].intact = false;
+    };
+    assert.throws(() => f.controller().launchHandoff(), /Retained handoff integrity/);
+    f.after = () => {};
+    f.image = `sha256:${'f'.repeat(64)}`;
+    assert.throws(() => f.controller().launchHandoff(), /Registered image changed/);
+    f.image = IMAGE;
+    f.hook = operation => { if (operation === 'source') throw new Error('Source observation unavailable'); };
+    assert.throws(() => f.controller().launchHandoff(), /Source observation unavailable/);
+    assert.deepEqual(tree(f.registry), record);
+});
+
+test('launch handoff rechecks source observations before emitting text', t => {
+    const f = setup(t);
+    f.register();
+    apply(f, contextSend(f));
+    const record = tree(f.registry);
+    let moved = false;
+    f.after = (operation, args) => {
+        if (operation === 'source' && args.source === f.docsSource && !moved) {
+            moved = true;
+            commit(f.docsSource, 'review.md', 'Changed during generation\n');
+        }
+    };
+    assert.throws(() => f.controller().launchHandoff(), /observations changed during/);
+    assert.equal(moved, true);
+    assert.deepEqual(tree(f.registry), record);
+});
+
+test('launch handoff rechecks target heads before emitting text', t => {
+    for (const atRead of [1, 4]) {
+        const f = setup(t);
+        f.register();
+        apply(f, contextSend(f));
+        let reads = 0;
+        let moved = false;
+        f.after = operation => {
+            if (operation === 'source' && ++reads === atRead) {
+                moved = true;
+                commit(f.target, 'src/original.txt', 'Work committed during generation\n');
+            }
+        };
+        assert.throws(() => f.controller().launchHandoff(), /HEAD changed/);
+        assert.equal(moved, true);
+    }
+});
+
 test('context controller completed legacy and context replays never rewind newer approved context', t => {
     const f = setup(t);
     f.register();

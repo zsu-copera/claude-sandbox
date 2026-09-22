@@ -10,6 +10,7 @@ Usage:
   bash sandbox-task.sh send TASK --handoff FILE
   bash sandbox-task.sh send TASK --apply PLAN_ID
   bash sandbox-task.sh status TASK
+  bash sandbox-task.sh launch-handoff TASK
   bash sandbox-task.sh collect TASK
 
 All successful actions emit JSON. No interactive prompts, host Node, image pulls,
@@ -63,6 +64,12 @@ Missing decisions produce needs-decision with no applicable plan ID.
 Successful context planning upgrades private task metadata to version 2;
 subsequent sends require --handoff. Existing registration config is unchanged.
 Context-only approval creates no import round and does not move audit/work bases.
+
+launch-handoff returns JSON with copy-ready text for the latest fully applied v2
+context. It requires stopped, clean repositories, intact inputs, no active send
+and context unchanged since approval. It rechecks observations before returning.
+It does not launch an agent, authorize a run, refresh canonical files or save state.
+Changed context needs reviewed handling through send --handoff, not an override.
 USAGE
 }
 die() { printf 'sandbox-task: %s\n' "$*" >&2; exit 1; }
@@ -70,7 +77,7 @@ if [[ $# == 1 && ( $1 == --help || $1 == -h ) ]]; then usage; exit 0; fi
 [[ $# -gt 0 ]] || { usage >&2; exit 2; }
 mode=$1
 shift
-case "$mode" in register|send|status|collect) ;; *) die 'Expected register, send, status or collect.';; esac
+case "$mode" in register|send|status|launch-handoff|collect) ;; *) die 'Expected register, send, status, launch-handoff or collect.';; esac
 if [[ $# == 1 && ( $1 == --help || $1 == -h ) ]]; then usage; exit 0; fi
 task=
 config_file=
@@ -85,7 +92,7 @@ else
     task=$1
     shift
     while [[ $# -gt 0 ]]; do
-        [[ $mode == send ]] || die 'Status/collect do not accept extra flags.'
+        [[ $mode == send ]] || die 'Status/launch-handoff/collect do not accept extra flags.'
         [[ $# -gt 1 && -n $2 && $2 != --* ]] || die 'Missing send option value.'
         case "$1" in
             --brief)

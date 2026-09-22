@@ -1,15 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 umask 077
-[[ $# == 2 || $# == 3 ]] || { echo 'Expected --image IMAGE [--observations-only|--context-only].' >&2; exit 2; }
-[[ $1 == --image && -n $2 && $2 != -* ]] || { echo 'Expected --image IMAGE [--observations-only|--context-only].' >&2; exit 2; }
+[[ $# == 2 || $# == 3 ]] || { echo 'Expected --image IMAGE [--observations-only|--context-only|--launch-handoff-only].' >&2; exit 2; }
+[[ $1 == --image && -n $2 && $2 != -* ]] || { echo 'Expected --image IMAGE [--observations-only|--context-only|--launch-handoff-only].' >&2; exit 2; }
 image=$2
 observations_only=0
 context_only=0
+launch_handoff_only=0
 if [[ $# == 3 ]]; then
     case "$3" in
         --observations-only) observations_only=1;;
         --context-only) context_only=1;;
+        --launch-handoff-only) launch_handoff_only=1;;
         *) echo 'Unknown integration selector.' >&2; exit 2;;
     esac
 fi
@@ -74,6 +76,30 @@ expect_failure() {
 }
 fixture setup
 export XDG_STATE_HOME="$root/operator-state"
+if [[ $launch_handoff_only == 1 ]]; then
+    fixture context-inputs
+    PATH=/unavailable /bin/bash "$wrapper" launch-handoff --help > "$root/launch-help.out"
+    grep -q 'launch-handoff TASK' "$root/launch-help.out"
+    expect_failure env PATH=/unavailable /bin/bash "$wrapper" launch-handoff TASK-1 --apply invalid
+    echo 'Checking launch-handoff prerequisites in a disposable task.'
+    bash "$wrapper" register --config "$root/config.json" > "$root/context-registered.json"
+    expect_failure bash "$wrapper" launch-handoff TASK-1
+    grep -q 'fully applied context-aware' "$root/failure.err"
+    bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-plan.json"
+    plan=$(jq -er .planId "$root/context-plan.json")
+    bash "$wrapper" send TASK-1 --apply "$plan" > "$root/context-applied.json"
+    fixture launch-before
+    echo 'Checking generated launch text and non-mutation.'
+    bash "$wrapper" launch-handoff TASK-1 > "$root/launch-handoff.json"
+    fixture launch-check
+    fixture launch-drift
+    echo 'Checking launch-handoff refusal after context drift.'
+    expect_failure bash "$wrapper" launch-handoff TASK-1
+    grep -q 'Context changed since' "$root/failure.err"
+    fixture launch-check-refused
+    echo 'PASS launch-handoff wrapper: help/arguments, applied context, exact paths, non-mutation and drift refusal.'
+    exit 0
+fi
 if [[ $context_only == 1 ]]; then
     fixture context-inputs
     PATH=/unavailable /bin/bash "$wrapper" send --help > "$root/context-help.out"
@@ -99,6 +125,9 @@ if [[ $context_only == 1 ]]; then
     bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-reselected.json"
     fixture context-check-reselected
     bash "$wrapper" send TASK-1 --apply "$plan" > "$root/context-applied.json"
+    fixture launch-before
+    bash "$wrapper" launch-handoff TASK-1 > "$root/launch-handoff.json"
+    fixture launch-check
     bash "$wrapper" send TASK-1 --handoff "$root/handoff.json" > "$root/context-unchanged.json"
     [[ $(jq -r .status "$root/context-unchanged.json") == unchanged ]]
     expect_failure bash "$wrapper" send TASK-1
@@ -120,6 +149,8 @@ if [[ $context_only == 1 ]]; then
     second=$(jq -er .planId "$root/context-second-plan.json")
     bash "$wrapper" send TASK-1 --apply "$second" > "$root/context-second-applied.json"
     fixture context-work
+    expect_failure bash "$wrapper" launch-handoff TASK-1
+    grep -q 'Context changed since' "$root/failure.err"
     bash "$wrapper" status TASK-1 > "$root/context-status.json"
     bash "$wrapper" collect TASK-1 > "$root/context-collection-work.json"
     fixture context-before-replay

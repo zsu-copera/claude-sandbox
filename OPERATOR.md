@@ -536,6 +536,52 @@ Legitimate committed work after a completed handoff is allowed; deleted or alter
 inputs are not silently treated as delivered. Prior entrypoints include only this
 task's intact inputs, not unrelated task histories retained in the same workspace.
 
+### Generate a checked launch handoff
+
+After applying a context-aware handoff, the outside agent can obtain copy-ready
+input guidance instead of manually translating `context.pathMap`:
+
+```bash
+bash /mnt/c/work/pera/claude-sandbox/sandbox-task.sh launch-handoff TASK
+```
+
+Like the other commands, this returns JSON. `text` is the copy-ready handoff;
+the surrounding fields retain the applied `planId`, approval `round`, pinned
+`imageId`, current repository branches/heads and current `context` observations.
+The text identifies selected briefs, absolute `/workspace/<repository>/...`
+snapshot paths, separate canonical write-back paths, roles, approved handling
+and delivery provenance. Paths/reasons are quoted metadata, not shell commands.
+Pass the text through without silently dropping its warnings or ownership rules.
+
+This is a **new read-only output command**, not an agent launcher, new approval or
+state migration. It requires an applied v2 context; legacy tasks keep the manual
+handoff route until explicitly opted in. It refuses pending/partial sends,
+dirty/running/busy/recovery state, switched branches, damaged retained inputs,
+unavailable observations or context changed since the applied approval. Relevant
+source observations and target state are rechecked before text is emitted.
+Refusals use the normal nonzero/stderr error contract, not success JSON with an
+unsafe prompt attached.
+
+The freshness gate concerns selected committed content and approved handling,
+not unrelated source commits. `unchanged` can still include a deliberately
+approved source/canonical divergence; the generated handling explains which
+version to retain, reconcile or defer. A metadata-only approval has `round: null`;
+its input paths and delivery-plan IDs still name the actual older snapshots.
+No new snapshot README is rendered or changed.
+
+A clean `status: ready` task can nevertheless have changed context and be refused.
+Review `status`, then use the existing prepare/approve/apply workflow for updated
+handling if another round is intended. Do not reset canonical files, restore old
+records or manufacture an approval just to produce launch text. This stricter
+gate applies only to generation; it does not change existing send/apply semantics.
+
+The output is a point-in-time observation, not a durable launch authorization.
+The lead must still review scope, obtain the separate human launch approval,
+establish capture/retention for the actual CLI, and recheck state before launching
+through the guarded entrypoint. The command does not verify warmed dependencies,
+choose a model, enforce read isolation or start reviewer sessions. Canonical files
+remain in place and unselected references are not refreshed.
+
 ## Status and interrupted handoffs
 
 ```bash

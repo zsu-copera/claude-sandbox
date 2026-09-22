@@ -252,6 +252,20 @@ A plan ID or agent-authored approval message does not authenticate the human.
 New approval summaries should include `Approve apply PLAN_ID` with the full actual
 ID substituted, while retaining the presented summary and the human response.
 
+**Can the controller produce the launch handoff instead of making the operator assemble it?**
+For a fully applied context-aware task, use `sandbox-task.sh launch-handoff TASK`.
+It returns JSON with copy-ready `text`, snapshot mappings, approved ownership and
+current repository identities. It does not start an agent or authorize work.
+Legacy tasks retain the manual route. See
+[the checked handoff](OPERATOR.md#generate-a-checked-launch-handoff).
+
+**Why does `launch-handoff` refuse a task whose status is `ready`?**
+`ready` describes repository/input health, not unchanged context. The new command
+also requires no active send and selected context unchanged since its applied
+approval. Legitimate host edits or sandbox write-back can require newly reviewed
+handling before generating another handoff. Do not overwrite canonical files or
+rewind state to clear the refusal. Separate launch approval remains required.
+
 **Does a committed handoff log replace transcript review?**
 No. The lead's sanitized ledger indexes proposals, human approvals, receipts,
 collections and review outcomes. Raw session/tool evidence remains private and

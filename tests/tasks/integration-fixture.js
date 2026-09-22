@@ -51,6 +51,35 @@ if (mode === 'setup') {
         const linked = write(root, 'handoff-link-source.json', bytes);
         fs.linkSync(linked, path.join(root, 'handoff-hardlink.json'));
         write(root, 'handoff-large-invalid.json', JSON.stringify({ ...handoff, extra: 'x'.repeat(200000) }));
+    } else if (mode === 'launch-before') {
+        write(root, 'launch-before.json', JSON.stringify({
+            registry: tree(path.join(root, 'operator-state/pera-sandbox-tasks/TASK-1')),
+            workspace: tree(f.workspace), source: tree(f.source), docs: tree(docsSource),
+        }));
+    } else if (mode === 'launch-check') {
+        const result = read('launch-handoff.json');
+        const record = read('operator-state/pera-sandbox-tasks/TASK-1/record.json');
+        assert.equal(result.status, 'launch-handoff');
+        assert.equal(result.planId, record.lastContext.planId);
+        assert.equal(result.context.revision, record.lastContext.revision);
+        assert.equal(result.context.status, 'unchanged');
+        assert.equal(result.launchesAgent, false);
+        assert.equal(result.repositories.prj.head, git(f.target, 'rev-parse', 'HEAD'));
+        assert.equal(result.repositories.Documentation.head, git(f.documentation, 'rev-parse', 'HEAD'));
+        assert.ok(result.text.includes('/workspace/Documentation/sandbox-rounds/TASK-1/R1/files/review.md'));
+        assert.ok(result.text.includes('possibly stale canonical copy'));
+        assert.ok(result.text.includes('not approval to launch'));
+        assert.deepEqual({
+            registry: tree(path.join(root, 'operator-state/pera-sandbox-tasks/TASK-1')),
+            workspace: tree(f.workspace), source: tree(f.source), docs: tree(docsSource),
+        }, read('launch-before.json'));
+    } else if (mode === 'launch-drift') {
+        commit(docsSource, 'README.md', 'New host content requiring reviewed handling\n');
+        write(root, 'launch-record-before-refusal.json', JSON.stringify(
+            tree(path.join(root, 'operator-state/pera-sandbox-tasks/TASK-1'))));
+    } else if (mode === 'launch-check-refused') {
+        assert.deepEqual(tree(path.join(root, 'operator-state/pera-sandbox-tasks/TASK-1')),
+            read('launch-record-before-refusal.json'));
     } else if (mode === 'context-check-refusals') {
         const record = read('operator-state/pera-sandbox-tasks/TASK-1/record.json');
         assert.equal(record.version, 1);

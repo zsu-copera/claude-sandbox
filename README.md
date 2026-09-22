@@ -82,7 +82,7 @@ the workspace, merge an outside branch or invoke prepare. The agent then reads
 See [the round workflow](QUICKSTART.md#continue-a-task-through-review-rounds).
 
 The preferred operator is now the **outside agent**, using task registration,
-`send`, `status` and `collect` rather than asking a person to manage packets and
+`send`, `status`, `launch-handoff` and `collect` rather than asking a person to manage packets and
 expected HEADs. See [OPERATOR.md](OPERATOR.md). The low-level commands remain available
 for diagnostics and recovery; the guarded agent launch is unchanged.
 
@@ -100,6 +100,10 @@ The optional private `--handoff` contract carries declared documents forward and
 binds committed-version observations and handling decisions to an approval plan.
 Legacy tasks retain their existing workflow until explicitly opted in.
 Snapshots still do not refresh canonical files or discover every stale reference.
+For an applied v2 context, `launch-handoff` generates copy-ready snapshot/ownership
+guidance from validated provenance. It refuses changed context or unsafe repository
+state; it does not start an agent or authorize a run. See
+[the checked launch handoff](OPERATOR.md#generate-a-checked-launch-handoff).
 Collection likewise does not merge or publish work: host integration and any push
 remain separate decisions. See the [harvest procedure](OPERATOR.md#harvest-and-integrate-reviewed-work).
 
@@ -374,7 +378,7 @@ separate decisions.
 | `VERIFY-ASSERTIONS.md` | Implemented checks, planned lifecycle assertions and coverage limits |
 | `sandbox-round.sh`, `tools/rounds/rounds.js` | Operator-only export/preview/apply/recover for append-only committed brief snapshots |
 | `verify-rounds.sh`, `tests/rounds/` | Disposable round-import and recovery regressions |
-| `sandbox-task.sh`, `tools/tasks/` | Registered outside-agent task plans, handoffs, status and audit collection |
+| `sandbox-task.sh`, `tools/tasks/` | Registered task plans, checked launch-handoff text, status and audit collection; no automatic agent launch |
 | `OPERATOR.md` | Outside-agent procedure, approval rules and audit boundaries |
 | `verify-tasks.sh`, `tests/tasks/` | Disposable task-controller and read-only collection coverage |
 

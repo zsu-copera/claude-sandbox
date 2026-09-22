@@ -175,7 +175,7 @@ setup the operator returns the exact plan to the lead; the lead executes apply o
 after the designated human approves it directly. An agent cannot approve itself
 or another agent. Agent session separation is not a technical permission boundary.
 
-The task-aware commands are `register`, `send`, `status` and `collect` in
+The task-aware commands are `register`, `send`, `status`, `launch-handoff` and `collect` in
 `sandbox-task.sh`. Initial assembly/prepare and the existing guarded agent launch
 remain separate. Attaching in-progress work requires an explicit audit baseline;
 registration must not hide existing changes by assuming the latest HEAD is the start.
@@ -199,6 +199,14 @@ to version 2, not the registration configuration or warmed workspace; do not swi
 an opted-in task back to older controller code or restore an obsolete record.
 Context tracking does not start an agent, synchronize canonical documents, or
 replace the outside audit.
+
+After an approved v2 handoff is applied, ask the outside agent to run
+`sandbox-task.sh launch-handoff TASK`. Its JSON `text` field supplies the selected
+briefs, exact snapshot paths, canonical write-back ownership and approved handling.
+See [the command's freshness and approval contract](OPERATOR.md#generate-a-checked-launch-handoff).
+It refuses changed context even when repository status is `ready`; resolve that
+through reviewed handling, not by resetting the workspace. Generating the text does
+not authorize or perform the separately guarded, recorded agent launch.
 
 Allow minutes for controller operations, not a short interactive-command timeout:
 EEP-24's first send preview exceeded a 120-second client timeout. This is an observed

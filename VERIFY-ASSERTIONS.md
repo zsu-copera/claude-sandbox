@@ -993,6 +993,51 @@ the existing retained evidence. It was left unchanged, with no replacement outco
 manifest or duplicate recording copy. The same maintenance receipt records this
 recheck; original capture completeness is not claimed.
 
+### Checked launch-handoff generation (G3), 2026-09-22
+
+The additive `sandbox-task.sh launch-handoff TASK` command returns JSON containing
+copy-ready `text`, applied plan/context identity, observed repository heads and
+provenance-backed input mappings. It uses the existing isolated controller and
+observation helpers. No private state version, packet rendering, import semantics,
+image-installed script, permission rule or canonical document was changed.
+
+The separately approved freshness gate requires a fully applied v2 context,
+no active send, clean/stopped repositories, intact retained inputs and selected
+context unchanged since approval. It rechecks source observations and then target
+state before returning. Approved divergence can be unchanged; its explicit handling
+is preserved. Changed context is a refusal even if ordinary task status is ready.
+The generator is neither launch approval nor read isolation and does not run an
+agent. Legacy tasks retain their manual route.
+
+Recorded checks against the existing offline image:
+
+| Check | Result |
+|---|---|
+| Targeted Node run | **13 named cases passed**: 10 new launch-handoff cases and 3 existing context/status/pinned-approval cases. TAP reports 16 because three unmatched test files appear as placeholder passes. |
+| Focused real CLI wrapper | `tests/tasks/wrapper-integration.sh --image localhost/pera-sandbox --launch-handoff-only` passed help/argument handling, refusal without applied v2 context, generated text/current heads, source/workspace/registry non-mutation, and refusal after selected-context drift. |
+| Scaffold assertions | 21 passed, S7 failed, 2 skips; same baseline findings, including historical paths in the unchanged untracked field report. |
+
+The new controller cases cover quoted literal paths; selected briefs and ownership;
+all divergence decisions; reused snapshots after metadata-only approval, including
+legacy-delivery reuse; pending/partial sends; changed source/canonical content;
+dirty/running/busy/recovery/branch-switched state; retained-input corruption;
+image drift and source errors; source changes during generation; and target changes
+during both the initial and final source-observation passes. Repeated generation
+is deterministic for unchanged observed state and does not save a registry entry,
+plan or collection.
+
+The existing context wrapper scenario also includes successful generation and
+post-write-back refusal for future combined runs. This closeout ran the focused
+scenario, not the full legacy/context/orphan-lock integration sequence again.
+All new runtime checks used disposable repositories and network-disabled containers
+without authentication volumes; fixture cleanup completed successfully. No image
+rebuild, dependency prepare or new live ticket run was performed.
+
+Actual next-ticket use and adoption of the revised two-pass review process remain
+with the ticket lead. The completed JWA-2906 workspace was not reapproved merely
+to make it eligible for this command: its legitimately changed context remains
+unchanged by this feature's development.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is
