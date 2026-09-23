@@ -446,7 +446,7 @@ against the real volume then passed, exit 0, and no token-like value remained in
 file. The removed token was not copied or backed up. These runs were headless;
 interactive startup and a real task under the PAT are not yet exercised.
 
-- **Outstanding:** an image rebuild, so the baked launcher enforces the guard.
+- **Deployed 2026-09-23** in image `fda0c678…`; see [the deployment record](#deployment-of-n3-e6-and-n4-2026-09-23).
 
 **Revocation, 2026-09-23:** the owner reported revoking the Copilot CLI OAuth authorization
 and then signing in again on the Windows host only. The new host token is outside the sandbox.
@@ -486,7 +486,7 @@ also check that a non-root DNS query fails. The Copilot allowlist gained the lic
 endpoints found by a names-only discovery run. Evidence is in `VERIFY-ASSERTIONS.md`: 64 of
 64 regressions, plus live headless Copilot and Claude runs with the source-mounted scripts.
 
-Status: **not deployed** until the image is rebuilt, together with N3. After deployment, E6's
+Status: **deployed 2026-09-23** in image `fda0c678…` (see below). E6's
 residual is data encoded in HTTPS to the allowlisted provider endpoints. That is inherent
 to using a hosted model. Unattended use additionally still requires E2/E3.
 
@@ -508,4 +508,32 @@ routed IPv6, both the HTTPS allowlist and E6 could be bypassed over IPv6.
 - 66 of 66 regressions passed. A real lockdown on the current image installed the expected
   IPv6 rules.
 
-Deployment is bundled with the E6 and N3 image rebuild.
+Deployed with E6 and N3 on 2026-09-23 (see below).
+
+## Deployment of N3, E6 and N4, 2026-09-23
+
+The ticket lead rebuilt the image from the retained workspace's build context, following
+QUICKSTART "Update the firewall without resetting the workspace". The scaffold session
+then checked the result independently.
+
+| Item | Result |
+|---|---|
+| Scaffold revision | `744118f` |
+| New tagged image | `fda0c6788cbe37baa15a7ac31e1dcdac65f28da0c7dea382d20bee8c576b9bc8`, created 2026-09-23 18:44:38Z |
+| Previous image | `893d19013d16066cacf386c442fd9d906f70792da74a046027f996ca7fed00d6`, now untagged but **retained**. The EEP-24 and JWA-2906 records, plans and collections pin it, so do not prune it. |
+| Build-context changes | Only `init-firewall.sh` and `run-copilot.sh` were copied in; the other six inputs already matched. Root `CLAUDE.md`/`AGENTS.md` were unchanged, and the npm credential was staged only for the build. No reset, `--force` or re-prepare. |
+| Baked files | All seven Dockerfile-installed files match `744118f`, root-owned; confirmed by both the lead and the scaffold session |
+| Agent CLIs | Baked Copilot 1.0.83 and Claude Code 2.1.280. The workspace-staged Copilot that actually runs reports **1.0.86** (directory dated 2026-09-17). Earlier records say 1.0.83 for the staged CLI; the discrepancy is not explained. |
+| First guarded start (lead, recorded) | Lockdown (ipset), provider reachable, non-allowlisted egress refused, `non-root DNS refused`, no N3 refusal; exit 0 and recording checksums verified |
+| Direct check (scaffold session, disposable container, baked script) | Lockdown exit 0, `non-root DNS refused`, IPv6 state `installed` with DROP policies and loopback-only rules, and the first OUTPUT rule is the non-root DNS REJECT |
+
+N3, E6 and N4 are **deployed** in the current image. Other developers get them by building
+from `main`, and they also need the PAT secret. E1 remains deployed.
+
+Not yet exercised on this image: interactive tool use in a real task, including Maven/npm
+under closed DNS, and Claude tool calls inside its inner sandbox. The discovery run used the
+baked Copilot 1.0.83, but the lead's first start with staged 1.0.86 succeeded.
+
+A minor packaging note: `copilot-defaults/settings.json` is baked with mode 755,
+inherited from the build-context file mode. It is root-owned and not writable by the agent.
+The Dockerfile now sets it to 0644 explicitly; that takes effect at the next rebuild.
