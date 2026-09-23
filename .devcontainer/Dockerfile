@@ -107,7 +107,8 @@ COPY container/copilot-settings.json    /usr/local/share/copilot-defaults/settin
 RUN sed -i 's/\r$//' /usr/local/bin/init-firewall.sh /usr/local/bin/prepare-sandbox /usr/local/bin/run-agent \
         /usr/local/bin/run-copilot /usr/local/share/copilot-defaults/*.json \
     && chmod 755    /usr/local/bin/init-firewall.sh /usr/local/bin/prepare-sandbox /usr/local/bin/run-agent \
-        /usr/local/bin/run-copilot
+        /usr/local/bin/run-copilot \
+    && chmod 0644   /usr/local/share/copilot-defaults/settings.json
 
 # Copilot guardrail installed as MACHINE POLICY, not user config. Policy hooks load
 # before all others, cannot be disabled by `disableAllHooks`, and live outside the
