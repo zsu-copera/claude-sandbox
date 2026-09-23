@@ -339,7 +339,7 @@ image was later rebuilt; this section records what was observed afterwards.
 | Baked scripts and policy | SHA-256 of all seven Dockerfile-installed files equals the scaffold source: `init-firewall.sh` and both launchers as of `d714fb5`, guard/policy as of `8168164`, `prepare.sh`/Copilot defaults as of `3158ce1` |
 | Baked agent CLIs | Copilot 1.0.83; Claude Code 2.1.269 |
 | Guarded startups on this image | EEP-24 (2026-09-15) and JWA-2906 (2026-09-18) started through the guarded Copilot launcher; see `VERIFY-ASSERTIONS.md` |
-| `main` / distribution copy | `main` still `91e7b1f`; Documentation copy not promoted |
+| `main` / distribution copy | `main` fast-forwarded on 2026-09-23 to include E1 and later work; Documentation copy not promoted |
 
 The comparison ran in a disposable `--network none` container with no mounts. It
 establishes byte parity with the E1 source, so this image is **not** the pre-E1 image
