@@ -25,36 +25,37 @@ settings-precedence work is not delegable without review):
 | Item | What is needed |
 |---|---|
 | E2/E3, Claude inner sandbox | Make mandatory policy non-writable by the agent, for example root-owned `/etc/claude-code/managed-settings.json`. Set `failIfUnavailable: true` and `allowUnsandboxedCommands: false` together. Observe the effective settings live rather than assuming precedence. Exercise tool calls inside bubblewrap with DNS closed (E6). |
-| E5, startup paths | Make guarded startup the default for explicit-shell and devcontainer paths, or refuse agent start outside the wrappers. |
+| E5, startup paths | Refuse agent start outside the wrappers: `claude`/`copilot` shims that require recorded lockdown and dropped capabilities. The devcontainer is declared unsupported for agent work (decided 2026-09-23). `new-sandbox.sh` no longer prints an unguarded shell recipe ([Phase 1](#phase-1-cleanup-2026-09-23)). |
 | C5, sign-off | Security/IT sign-off before other developers run unattended. Record it here. |
 
 **Blocking a second developer** (mechanical unless noted):
 
 | Item | What is needed |
 |---|---|
-| I1/I2/I3, personal defaults (S7) | Remove the named commit identity default in `prepare.sh`, the Windows-profile credential paths in `new-sandbox.sh`, and the personal harvest paths in the docs. S7 should then pass; update the expected static baseline in `AGENTS.md`. |
-| D5 / I4 | Decide which ignored assets are required per task; avoid fixed container-name collisions. |
+| D5, required assets | Missing `prj/.github` or `prj/.agents` becomes an error by default, with an explicit override and how to regenerate them (decided 2026-09-23). |
 | Onboarding | Each developer: repository invitation, build from `main`, own fine-grained PAT (QUICKSTART step 4-alt). |
 
 **Safety and correctness:**
 
 | Item | What is needed |
 |---|---|
-| V2, reset safety | `new-sandbox.sh --force` deletes without checking unharvested refs, dirty work or destination containment. |
-| C1/C2/C3, overlay guidance | Fix stale test-runner counts and ticket-specific state in `overlay/CLAUDE.md`. Correct "pins the model" wording: the launcher seeds a default once. |
-| D4 | `New-Sandbox.ps1` is unsupported drift: remove it or label it clearly. |
+| V2, reset safety | `new-sandbox.sh --force` deletes without checking unharvested refs, dirty work or destination containment. (The PowerShell half went with D4.) |
+| Next rebuild | Must carry Phase 1's `prepare.sh` and Copilot seed. Until then, prepare a newly assembled workspace only on a rebuilt image: the old `prepare.sh` restores the removed identity default. |
 
 **Verification gaps on the current image** (first real session after the rebuild):
 - Interactive Copilot and Claude sessions under E6.
 - Maven/npm offline builds with DNS closed.
 - Claude tool calls inside its inner sandbox.
+- Copilot `/model` on a new volume shows the seeded `claude-opus-5.5` (C3; the dotted ID is inferred from the CLI bundle).
 
 The E6 discovery ran on baked Copilot 1.0.83, while the workspace-staged CLI is 1.0.86. Earlier
 records said 1.0.83 for the staged CLI, and the discrepancy is unexplained. If a CLI stops
 working, run a new names-only discovery; do not reopen DNS.
 
+**Closed 2026-09-23 in [Phase 1](#phase-1-cleanup-2026-09-23):** I1, I2, I3, I4, C1, C2, C3, D4.
+
 **Longer term:** D2/D3 (immutable inputs, versioned releases), V1/N2 (runtime P/A/G/X checks,
-CI), and V3/V4 (partly addressed by the recorder and `sandbox-task.sh collect`; reassess).
+CI; a static-check CI job is deferred by owner decision), and V3/V4 (partly addressed by the recorder and `sandbox-task.sh collect`; reassess).
 
 **Owner actions outside this repository:**
 - Delete the retired `Documentation` branch `claude-sandbox`; a bundle is retained privately.
@@ -589,3 +590,31 @@ baked Copilot 1.0.83, but the lead's first start with staged 1.0.86 succeeded.
 A minor packaging note: `copilot-defaults/settings.json` is baked with mode 755,
 inherited from the build-context file mode. It is root-owned and not writable by the agent.
 The Dockerfile now sets it to 0644 explicitly; that takes effect at the next rebuild.
+
+## Phase 1 cleanup, 2026-09-23
+
+Branch `fix/open-items-phase1`. The owner approved the plan and these decisions:
+
+| Decision | Choice |
+|---|---|
+| I1 identity source | Taken when the sandbox is assembled, from `SANDBOX_GIT_NAME`/`SANDBOX_GIT_EMAIL` or WSL git config. No default |
+| D5 | Missing ignored assets fail by default, with an explicit override (Phase 2) |
+| E5 devcontainer | Unsupported for agent work; wrappers refuse unguarded starts (Phase 3) |
+| D4 | Delete `New-Sandbox.ps1` |
+| C3 | First-run Copilot default: Opus 5.5, high effort, long-context tier |
+| CI | Deferred |
+
+| Finding | Outcome |
+|---|---|
+| I1 | `prepare.sh` has no identity default. It keeps the override, requires a per-repo identity and checks it before the firewall opens. `new-sandbox.sh` writes the identity into both clones |
+| I2 | `new-sandbox.sh` resolves `%USERPROFILE%` through WSL interop, never `$USER`; `WIN_M2`/`WIN_NPMRC` still override |
+| I3 | Already resolved by the earlier harvest rewrite: the cited lines contain no personal paths. A search of every tracked file outside `history/` found personal identifiers only in the I1/I2 lines |
+| I4 | Docs: `podman rm` after prepare, and a per-workspace container-name suffix rule. No script generates agent container names |
+| C1/C2 | The overlay reads each project's test builder instead of carrying counts, gives Karma and Vitest their own flags, drops the JWA-2905 block, and now says the agent has no DNS (it still claimed DNS was allowed after E6) |
+| C3 | Seed changed; docs say "default, written once" rather than "pins" |
+| D4 | Script removed; git history keeps it |
+| E5 (part) | The assembly script's closing message points at the guarded launchers |
+
+S7 now passes: the static baseline is 22 passed, 0 failed, 2 skipped. The test evidence and
+its limits are in `VERIFY-ASSERTIONS.md` ("Personal defaults and overlay cleanup"). None of
+this is deployed in the image yet.

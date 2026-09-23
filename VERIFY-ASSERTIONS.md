@@ -1107,6 +1107,27 @@ with the ticket lead. The completed JWA-2906 workspace was not reapproved merely
 to make it eligible for this command: its legitimately changed context remains
 unchanged by this feature's development.
 
+### Personal defaults and overlay cleanup (I1–I4, C1–C3, D4), 2026-09-23
+
+Static assertions: **22 passed, 0 failed, 0 warnings, 2 skipped**. S7 passes for the
+first time; S3/S20 skip as before. Runtime evidence, all on the host or in disposable
+state, never against the warmed task workspace:
+
+| Check | Result |
+|---|---|
+| `new-sandbox.sh` preflight in `centos-9`, real environment, existing `~/pera-sandbox`, no `--force` | `%USERPROFILE%` resolved through interop, identity found, both credential files present; stopped at "already exists" with nothing written |
+| Preflight failure cases, throwaway source repos, existing target | no interop → names `WIN_M2`/`WIN_NPMRC`; no identity, and name-only → identity error; `<` in identity → refused; missing `settings.xml` → refused. Overrides and repo-local identity pass preflight |
+| Full `new-sandbox.sh` run, fake source repos and credential files, throwaway `SANDBOX_ROOT` | exit 0; both clones carry the supplied per-repo identity, no remotes, secrets mode 600; temp tree removed |
+| New `prepare.sh`, source-mounted read-only, disposable `--network=none --cap-drop=all` containers, fake workspace | no identity → error **before** "Opening firewall"; `-e SANDBOX_GIT_*` → applied to both repos; existing per-repo identity → kept; `core.autocrlf=input` set |
+| Overlay's Vitest command on host `prj` (`uat-member`): `ng test --project working-after-retirement --watch=false` | Vitest 4.1.5, 2 files, **84 passed** |
+
+Not established: the baked image still carries the old `prepare.sh` and Copilot seed
+until the next rebuild. An image built from the old `prepare.sh` still falls back to
+the removed default, and would overwrite the identity `new-sandbox.sh` wrote, so a
+workspace assembled now should be prepared only on a rebuilt image. The Copilot ID
+`claude-opus-5.5` follows the dotted form found in the CLI bundle and has not been
+confirmed with `/model` in a live session. Overlay text reaches new sandboxes only.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is
@@ -1118,9 +1139,8 @@ unchanged by this feature's development.
 
 ## Notes for whoever implements this
 
-- **The S-series is implemented** in `verify-scaffold.sh` (2026-09-09). With the E1 source
-  assertions updated: 21 pass, 1 unresolved failure (S7, I1/I2/I3), 0 warnings, 2 skips
-  (no shellcheck, no VERSION). Focused firewall coverage does not complete the lifecycle
+- **The S-series is implemented** in `verify-scaffold.sh` (2026-09-09). Since I1/I2 were
+  fixed (2026-09-23): 22 pass, 0 failures, 0 warnings, 2 skips (no shellcheck, no VERSION). Focused firewall coverage does not complete the lifecycle
   P/A/G/X runner.
 - S1 is the assertion most likely to be written wrongly. Two tools lie here: `grep -c $'\r'`
   can match every line in Git Bash, and `file(1)` omits its CRLF note in some builds. Count

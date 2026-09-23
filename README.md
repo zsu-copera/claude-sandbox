@@ -2,9 +2,10 @@
 
 > **New here? Start with [QUICKSTART.md](QUICKSTART.md)** — 4 commands + one login.
 > Questions? Check the [FAQ](FAQ.md) first.
-> **E1 firewall update:** implemented on `fix/e1-firewall-transitions`, not yet recorded
-> as deployed. See the [review record](SECURITY-REVIEW.md#e1-remediation-on-a-separate-branch)
-> and [existing-sandbox update procedure](QUICKSTART.md#update-the-firewall-without-resetting-the-workspace).
+> **Security status:** the current work list is
+> [Open items in SECURITY-REVIEW.md](SECURITY-REVIEW.md#open-items-as-of-2026-09-23).
+> To update an existing sandbox's image, follow the
+> [existing-sandbox update procedure](QUICKSTART.md#update-the-firewall-without-resetting-the-workspace).
 
 Runs a coding agent **autonomously** inside an isolated container that holds a disposable
 copy of both repos. Two entrypoints share one image and one prepared workspace:
@@ -38,7 +39,7 @@ CLI, `--allow-all-tools`). Isolation layers:
 The required workflow is **local commits only**: the sandbox repos have no remotes,
 common push commands are deny-ruled, and a human reviews and pushes from Windows.
 These controls do not prove that every equivalent command or subprocess upload is
-blocked. E1 fixes firewall transitions, not the remaining E2-E6/N1 isolation findings.
+blocked. E1, E6 and N4 are deployed; E2/E3, E5 and N1 remain open.
 
 **Review model in one sentence:** the bind-mounted `~/pera-sandbox` is the intended
 review channel — a disposable copy whose contents are inert data until a human
