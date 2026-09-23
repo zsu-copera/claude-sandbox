@@ -117,7 +117,8 @@ bash /mnt/c/work/pera/claude-sandbox/sandbox-record.sh \
     -w /workspace pera-sandbox run-copilot
 ```
 
-Replace the label and workspace with the approved run's values. The `--workspace`
+Replace the label and workspace with the approved run's values; for any workspace
+other than the default, also suffix the container name so it cannot collide (finding I4). The `--workspace`
 value must match the actual workspace mount. Arguments following `--` are passed
 as separate arguments, without shell re-parsing; add approved CLI arguments after
 `run-copilot`. This is an interactive recipe, not qualification of headless or

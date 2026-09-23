@@ -123,7 +123,10 @@ Clones `prj` + `Documentation` from the local Windows working copies (committed 
 current branch — no SSH keys, LF endings), overlays the git-ignored AI assets
 (`prj/.github`, `prj/.agents`), drops in the sandbox `CLAUDE.md` + `.claude/settings.json`,
 stages the corp CAs, and copies `~\.m2\settings.xml` + `~\.npmrc` into `.secrets/`
-(purged before the agent runs). `--force` deletes and recreates the workspace, including
+(purged before the agent runs). The Windows profile is resolved through WSL interop and
+the commit identity comes from WSL git config, written per-repo; neither has a built-in
+default (findings I1/I2, see [QUICKSTART step 1](QUICKSTART.md#1-assemble-the-sandbox--from-windows-powershell)
+for the overrides). `--force` deletes and recreates the workspace, including
 unharvested commits, uncommitted work and caches. Harvest first; do not use it merely to
 update the firewall image.
 
@@ -173,7 +176,12 @@ podman run -d --name pera-prepare --userns=keep-id \
   -v ~/pera-sandbox:/workspace -v pera-claude-config:/home/vscode/.claude \
   -w /workspace pera-sandbox prepare-sandbox
 podman logs -f pera-prepare        # watch; exits when done
+podman rm pera-prepare             # after it exits, so a re-run can reuse the name
 ```
+
+The fixed container names assume the single default workspace. A second workspace
+running at the same time needs its own name suffix on every container; see
+[QUICKSTART step 3](QUICKSTART.md#3-warm-the-build-caches--network-open-one-time-per-sandbox).
 
 ### 4. Run the agent (locked down)
 

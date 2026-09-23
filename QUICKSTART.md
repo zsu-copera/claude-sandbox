@@ -18,6 +18,7 @@ Copilot sessions using shared GitHub IP ranges.
 | `centos-9` WSL distro with podman | IT-standard setup; check with `wsl -d centos-9 -- podman --version` |
 | `%USERPROFILE%\.m2\settings.xml` | Normal PERA Maven setup (Nexus mirror + credentials) |
 | `%USERPROFILE%\.npmrc` | Normal PERA npm setup (Nexus registry + auth) |
+| Git identity inside WSL | `git config --global user.name` / `user.email` in `centos-9`. Sandbox commits are attributed to it; see step 1 to pass it instead |
 | Working copies at `C:\work\pera\{prj,Documentation}` | The sandbox clones their **committed** state |
 | This scaffold at `C:\work\pera\claude-sandbox` | Clone `main` of the scaffold's GitHub repository (access by invitation from its maintainer). The old `Documentation` branch `claude-sandbox` copy is retired; do not build from it |
 | Corp network / VPN | Needed for steps 1–3 only (Nexus access); the agent itself runs locked-down |
@@ -34,6 +35,12 @@ wsl -d centos-9 -- bash /mnt/c/work/pera/claude-sandbox/new-sandbox.sh --force
 Clones both repos into `~/pera-sandbox` (inside WSL), overlays the git-ignored AI assets
 (`prj/.github`, `prj/.agents`), and stages the corp CAs + your Nexus credentials
 (credentials are deleted again before the agent ever starts).
+It finds the credential files through your Windows `%USERPROFILE%`, and records the
+git identity WSL reports for `C:\work\pera\prj` in both sandbox repos. There is no
+built-in default for either: if one cannot be found the script stops and names the
+variable to set (`WIN_M2`/`WIN_NPMRC` for the files, `SANDBOX_GIT_NAME`/`SANDBOX_GIT_EMAIL`
+for the identity), for example
+`wsl -d centos-9 -- env SANDBOX_GIT_NAME="Your Name" SANDBOX_GIT_EMAIL=you@example.org bash /mnt/c/work/pera/claude-sandbox/new-sandbox.sh`.
 **`--force` deletes the old workspace, including unharvested work and caches.** Harvest
 first. To install E1 into an existing sandbox, use the update section below instead.
 
@@ -59,10 +66,18 @@ podman run -d --name pera-prepare --userns=keep-id --cap-add=NET_ADMIN --cap-add
   -w /workspace pera-sandbox prepare-sandbox
 
 podman logs -f pera-prepare     # wait for "BUILD SUCCESS" ... "Prepare complete."
+podman rm pera-prepare          # once it has exited; a re-run needs the name free
 ```
 
 ~10–30 min. Downloads everything the locked-down agent will need: Maven deps, the pinned
 node versions (assembled via Nexus), and npm packages.
+
+**Container names belong to one workspace (finding I4).** `pera-prepare`, `pera-agent`
+and `pera-copilot` in these commands are for the default workspace `~/pera-sandbox`.
+Podman refuses a second container under a name already in use. For a second workspace
+used at the same time (for example `SANDBOX_ROOT=~/pera-sandbox-b` at step 1), change the
+`-v` path **and** give every container name the same suffix (`pera-prepare-b`,
+`pera-agent-b`, `pera-copilot-b`). Auth volume and secret names stay as they are.
 
 **Choosing Maven profiles.** Default scope is the agency portal (`agencyWWW`). To warm
 more portals, set `PREPARE_PROFILES` — the `-e` flag **must come before the image name**
@@ -76,6 +91,7 @@ podman run -d --name pera-prepare --userns=keep-id --cap-add=NET_ADMIN --cap-add
   -w /workspace pera-sandbox prepare-sandbox
 
 podman logs -f pera-prepare     # wait for "BUILD SUCCESS" ... "Prepare complete."
+podman rm pera-prepare
 ```
 
 Coverage rules (a profile only builds offline if its modules were warmed):
