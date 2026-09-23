@@ -1,7 +1,7 @@
 # Quick Start — PERA Agent Sandbox (Claude Code / GitHub Copilot CLI)
 
 Spin up an isolated environment where a coding agent — **Claude Code** or **GitHub
-Copilot CLI** (your choice at step 4; both drive Claude Opus 4.8) — works **autonomously**
+Copilot CLI** (your choice at step 4; both run Claude models) — works **autonomously**
 on a disposable copy of the PERA codebase rather than your real working copies.
 Guarded startup installs an address-based firewall and removes build credentials.
 The required workflow is local commits followed by human review and push; it is not
@@ -177,7 +177,8 @@ events separately. See [the recorder contract](OPERATOR.md#record-an-interactive
 for incomplete captures, sensitive output and the actual-CLI demonstration still
 needed before relying on this layer. No image rebuild or prepare is needed.
 
-Model is pre-set to claude-opus-4-8 (check `/model`). Headless variant:
+The first run seeds a default model, claude-opus-5.5 at high effort on the long-context
+tier; an existing volume keeps its choice (check `/model`). Headless variant:
 `... run-copilot --autopilot -p "Convert EPD-xxx per the migration guide"`.
 That is an underlying-launcher option, not the interactive recorder recipe;
 headless evidence needs its own qualification.

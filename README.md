@@ -258,8 +258,12 @@ keep storage outside every container mount, retain selected CLI events alongside
 the terminal record, and demonstrate the actual CLI/setup before ticket use.
 A zero launch exit is not proof that the agent's tests passed.
 
-The seeded `~/.copilot/settings.json` pins the model to **claude-opus-4-8** (verify with
-`/model` on first run — Enterprise policy must expose it). `--continue`/`--resume` work
+On first run only, `run-copilot` seeds `~/.copilot/settings.json` with a **default** of
+`claude-opus-5.5` at high effort on the long-context tier (finding C3). It never
+overwrites an existing file, so a volume created earlier keeps its model, and `/model`
+changes it at any time; this is a starting point, not a pin. Confirm with `/model` on
+first run: Enterprise policy must expose the model, and Copilot's IDs use dots
+(`claude-opus-4.7`), unlike Anthropic's hyphenated API IDs. `--continue`/`--resume` work
 like Claude's. Autopilot continuation limit defaults to 5 (`--max-autopilot-continues`).
 
 **Copilot authenticates with a narrow PAT, not `/login` (finding N3).** The agent can
@@ -385,7 +389,7 @@ separate decisions.
 | `container/prepare.sh` → `prepare-sandbox` | Warm caches via Nexus with network open |
 | `container/run-agent.sh` → `run-agent` | Lockdown (Anthropic) → purge creds → start Claude |
 | `container/run-copilot.sh` → `run-copilot` | Refuse a non-PAT/missing token or stored sign-in token (N3) → lockdown (Copilot hosts) → purge creds → start Copilot CLI |
-| `container/copilot-settings.json` | Seeded model default (claude-opus-4-8) for `~/.copilot` |
+| `container/copilot-settings.json` | First-run default model settings (claude-opus-5.5, high effort, long context) for `~/.copilot` |
 | `container/copilot-policy.json` → `/etc/github-copilot/policy.d/10-guardrails.json` | Machine-policy `preToolUse` hook registration (root-owned; survives `disableAllHooks`) |
 | `container/guard-shell-command.js` | Selected command-pattern vetoes; known matching gaps, not a complete no-push boundary |
 | `container/certs/` | (generated) corp root CAs staged by new-sandbox.sh |

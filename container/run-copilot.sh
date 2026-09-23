@@ -99,8 +99,8 @@ echo "==> Purging build-time credentials"
 rm -rf "$WS/.secrets"
 rm -f "$HOME/.m2/settings.xml" "$HOME/.npmrc" 2>/dev/null || true
 
-# Seed the model default (claude-opus-4-8) into the persistent volume on FIRST run
-# only — never clobber user state. (Deny rules are NOT seeded: Copilot's
+# Seed the model default (claude-opus-5.5, high effort, long-context tier) into the
+# persistent volume on FIRST run only — never clobber user state. (Deny rules are NOT seeded: Copilot's
 # permissions-config.json is an interactive-approvals store, not a policy file;
 # enforcement is via the CLI flags below, outside the agent's reach.)
 mkdir -p "$COPILOT_DIR"
