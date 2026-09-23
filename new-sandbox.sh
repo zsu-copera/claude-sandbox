@@ -11,10 +11,13 @@ usage() {
     cat <<'USAGE'
 Usage: new-sandbox.sh [--force [--discard-unharvested]] [--allow-missing-assets]
 
-  --force                 Replace an existing sandbox at SANDBOX_ROOT. Refused if it holds
-                          uncommitted or unharvested work, is in use, cannot be inspected,
-                          or is registered to a task.
-  --discard-unharvested   With --force: list those problems, then delete anyway.
+  --force                 Replace an existing sandbox at SANDBOX_ROOT. Refused if a repo is
+                          not clean or cannot be inspected; HEAD, a branch or a stash entry
+                          is on no source ref; there are linked worktrees or unexpected
+                          top-level files; or a task is registered to it. Tags, other refs
+                          and file contents outside the two repos are not checked.
+  --discard-unharvested   With --force: list those problems, then delete anyway. Never
+                          overrides a running container or a pending round recovery.
   --allow-missing-assets  Assemble even if prj's git-ignored AI assets are missing.
 
 Environment: SOURCE_ROOT (default /mnt/c/work/pera), SANDBOX_ROOT (default ~/pera-sandbox,
@@ -37,7 +40,7 @@ for arg in "$@"; do
 done
 [ "$DISCARD" = 0 ] || [ "$FORCE" = 1 ] || die "--discard-unharvested only applies together with --force"
 
-SCAFFOLD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCAFFOLD="$(realpath -e -- "$(dirname "${BASH_SOURCE[0]}")")"
 SOURCE_ROOT="$(realpath -m -- "${SOURCE_ROOT:-/mnt/c/work/pera}")"
 SANDBOX_ROOT_IN="${SANDBOX_ROOT:-$HOME/pera-sandbox}"
 SANDBOX_ROOT="$(realpath -m -- "$SANDBOX_ROOT_IN")"
@@ -47,11 +50,16 @@ HOME_REAL="$(realpath -m -- "$HOME")"
 # --force ends in rm -rf of this path, so pin down what it can be before anything else.
 # Strictly inside $HOME keeps it off /, $HOME itself and the Windows drives, and apart
 # from the real working copies and this scaffold that it is cloned from.
-under() { [ "$2" = "$1" ] || case "$2" in "$1"/*) true ;; *) false ;; esac; }
-[ ! -L "$SANDBOX_ROOT_IN" ] || die "SANDBOX_ROOT must not be a symlink: $SANDBOX_ROOT_IN"
+under() { [ "$2" = "$1" ] || [ "$1" = / ] || case "$2" in "$1"/*) true ;; *) false ;; esac; }
+# No symlink anywhere in the path: -s keeps links, so any difference means one was
+# followed (this also catches `link/` and `link/.`, which [ -L ] misses).
+[ "$(realpath -ms -- "$SANDBOX_ROOT_IN")" = "$SANDBOX_ROOT" ] \
+    || die "SANDBOX_ROOT must not pass through a symlink: $SANDBOX_ROOT_IN"
 [ "$SANDBOX_ROOT" != "$HOME_REAL" ] && under "$HOME_REAL" "$SANDBOX_ROOT" \
     || die "SANDBOX_ROOT must be a directory inside $HOME_REAL, not $SANDBOX_ROOT"
-for p in "$SOURCE_ROOT" "$SCAFFOLD"; do
+# The source repos are compared resolved as well: either may be a link elsewhere.
+for p in "$SOURCE_ROOT" "$(realpath -m -- "$SOURCE_ROOT/prj")" \
+         "$(realpath -m -- "$SOURCE_ROOT/Documentation")" "$SCAFFOLD"; do
     ! under "$p" "$SANDBOX_ROOT" && ! under "$SANDBOX_ROOT" "$p" \
         || die "SANDBOX_ROOT ($SANDBOX_ROOT) overlaps $p"
 done
@@ -112,7 +120,7 @@ REQUIRED_ASSETS=(
 )
 missing_assets=()
 for a in "${REQUIRED_ASSETS[@]}"; do
-    [ -f "$SOURCE_ROOT/prj/$a" ] || missing_assets+=("prj/$a")
+    [ -f "$SOURCE_ROOT/prj/$a" ] && [ ! -L "$SOURCE_ROOT/prj/$a" ] || missing_assets+=("prj/$a")
 done
 if [ "${#missing_assets[@]}" -gt 0 ]; then
     if [ "$ALLOW_MISSING_ASSETS" = 1 ]; then
@@ -132,40 +140,77 @@ fi
 # git would honour their config (fsmonitor, filters, hooks), so working-tree state comes
 # from sandbox-round.sh inspect, which runs in a network-less, capability-free container.
 MARKER=.pera-sandbox-workspace
+# Entries assembly and prepare create at the top level; anything else is someone's work.
+KNOWN_TOP=" prj Documentation CLAUDE.md AGENTS.md .claude .devcontainer container .dockerignore .secrets .m2 .node-cache .agent-cli $MARKER "
+# Prints one problem per line, prefixed "hard " (--discard-unharvested cannot override)
+# or "soft ". Every check that cannot complete reports a problem: it fails closed.
 reset_problems() {
-    local r out status head refs sha name state ws rec errf
-    errf=$(mktemp)
+    local r gd out status head refs sha name state ws rec errf entry n
+    soft() { printf 'soft %s\n' "$*"; }
+    hard() { printf 'hard %s\n' "$*"; }
+    errf=$(mktemp) || { soft "cannot create a temporary file, so nothing was inspected"; return 0; }
+
     # A registered task pins this workspace; deleting it strands the task's rounds.
     state="${XDG_STATE_HOME:-$HOME/.local/state}/pera-sandbox-tasks"
+    if [ -e "$state" ] && ! { [ -d "$state" ] && [ -r "$state" ] && [ -x "$state" ]; }; then
+        soft "task state $state is unreadable; cannot confirm no task uses this workspace"
+    fi
     for rec in "$state"/*/record.json; do
-        [ -f "$rec" ] || continue
+        [ -e "$rec" ] || continue
         ws=$(jq -r '.config.workspace // empty' "$rec" 2>/dev/null) || ws=
-        [ -n "$ws" ] && [ "$(realpath -m -- "$ws")" = "$SANDBOX_ROOT" ] \
-            && echo "registered to task $(basename "$(dirname "$rec")")"
+        if [ -z "$ws" ]; then
+            soft "task record $rec is unreadable; cannot confirm it does not use this workspace"
+        elif ws=$(realpath -m -- "$ws") && { under "$ws" "$SANDBOX_ROOT" || under "$SANDBOX_ROOT" "$ws"; }; then
+            soft "registered to task $(basename "$(dirname "$rec")") (workspace $ws)"
+        fi
     done
+
+    for entry in "$SANDBOX_ROOT"/* "$SANDBOX_ROOT"/.[!.]* "$SANDBOX_ROOT"/..?*; do
+        [ -e "$entry" ] || [ -L "$entry" ] || continue
+        n=${entry##*/}
+        case "$KNOWN_TOP" in
+            *" $n "*) ;;
+            *) soft "unexpected top-level entry $n (its contents are not checked)" ;;
+        esac
+    done
+
     for r in prj Documentation; do
-        [ -e "$SANDBOX_ROOT/$r" ] || continue
+        gd="$SANDBOX_ROOT/$r/.git"
+        [ -e "$SANDBOX_ROOT/$r" ] || [ -L "$SANDBOX_ROOT/$r" ] || continue
+        [ -d "$gd" ] && [ ! -L "$gd" ] || { soft "$r has no ordinary .git directory; cannot check it"; continue; }
         if ! out=$(bash "$SCAFFOLD/sandbox-round.sh" inspect --workspace "$SANDBOX_ROOT" --repository "$r" 2>"$errf"); then
-            echo "$r could not be inspected ($(tail -n 1 "$errf"))"
+            soft "$r could not be inspected ($(tail -n 1 "$errf"))"
             continue
         fi
-        status=$(printf '%s' "$out" | jq -r '.status // empty')
-        head=$(printf '%s' "$out" | jq -r '.head // empty')
-        [ "$status" = clean ] || echo "$r is ${status:-in an unknown state} (uncommitted, in-progress or running work)"
-        # Every local branch tip and a stash, read from the ref files as plain data.
-        refs=$(cd "$SANDBOX_ROOT/$r/.git" && {
+        status=$(printf '%s' "$out" | jq -r '.status // empty' 2>/dev/null) || status=
+        head=$(printf '%s' "$out" | jq -r '.head // empty' 2>/dev/null) || head=
+        case "$status" in
+            clean) ;;
+            running) hard "$r is mounted by a running container; stop it first" ;;
+            recovery-required) hard "$r has an interrupted round import; run sandbox-round.sh recover first (its recovery state is keyed by path and would outlive the reset)" ;;
+            *) soft "$r is ${status:-in an unknown state} (uncommitted or in-progress work)" ;;
+        esac
+        # Linked worktrees can live outside this working tree, where inspect cannot see them.
+        [ ! -e "$gd/worktrees" ] || soft "$r has linked worktrees (.git/worktrees); their work is not checked"
+        # HEAD, every local branch and every stash entry, read from ref files as plain data.
+        # packed-refs is parsed whole: gc packs refs/stash too, and a line that cannot be
+        # parsed is reported rather than skipped.
+        refs=$(cd "$gd" && {
             [ -n "$head" ] && echo "$head HEAD"
             find refs/heads -type f -print 2>/dev/null | while IFS= read -r f; do printf '%s %s\n' "$(head -c 80 "$f")" "$f"; done
             [ -f refs/stash ] && printf '%s refs/stash\n' "$(head -c 80 refs/stash)"
-            [ -f packed-refs ] && grep -E '^[0-9a-f]{40,64} refs/heads/' packed-refs
+            [ -f logs/refs/stash ] && awk '{ print $2, "stash-entry" }' logs/refs/stash
+            [ -f packed-refs ] && awk '/^#/ || /^\^/ || NF == 0 { next }
+                NF != 2 { print "malformed", "packed-refs:" NR; next }
+                $2 ~ /^refs\/heads\// || $2 == "refs/stash" { print $1, $2 }' packed-refs
         } || true)
         while read -r sha name; do
             [ -n "$sha" ] || continue
             if ! [[ $sha =~ ^[0-9a-f]{40}([0-9a-f]{24})?$ ]]; then
-                echo "$r $name is not a plain commit id; cannot confirm it was harvested"
+                soft "$r $name is not a plain commit id; cannot confirm it was harvested"
             elif ! git -C "$SOURCE_ROOT/$r" cat-file -e "$sha^{commit}" 2>/dev/null \
                  || [ -z "$(git -C "$SOURCE_ROOT/$r" for-each-ref --contains "$sha" --count=1 2>/dev/null)" ]; then
-                echo "$r $name (${sha:0:12}) is not on any ref in $SOURCE_ROOT/$r: unharvested commits"
+                soft "$r $name (${sha:0:12}) is not on any ref in $SOURCE_ROOT/$r: unharvested commits"
             fi
         done <<< "$refs"
     done
@@ -184,20 +229,36 @@ if [ -e "$SANDBOX_ROOT" ]; then
     fi
     echo "==> Checking $SANDBOX_ROOT for work that would be lost ..."
     problems=$(reset_problems)
-    if [ -n "$problems" ]; then
+    # sed, not grep: it never fails on no match, which pipefail would turn into an exit.
+    # Anything not marked hard counts as soft, so an unprefixed line cannot be lost.
+    hard_problems=$(printf '%s\n' "$problems" | sed -n 's/^hard //p')
+    soft_problems=$(printf '%s\n' "$problems" | sed -e '/^hard /d' -e '/^$/d' -e 's/^soft //')
+    if [ -n "$hard_problems" ]; then
+        echo "ERROR: refusing to delete $SANDBOX_ROOT; --discard-unharvested does not override:" >&2
+        printf '%s\n' "$hard_problems" | sed 's/^/         /' >&2
+        [ -z "$soft_problems" ] || { echo "       Also found:" >&2; printf '%s\n' "$soft_problems" | sed 's/^/         /' >&2; }
+        exit 1
+    fi
+    if [ -n "$soft_problems" ]; then
         if [ "$DISCARD" = 1 ]; then
             echo "WARN: --discard-unharvested given; discarding:" >&2
-            printf '%s\n' "$problems" | sed 's/^/       /' >&2
+            printf '%s\n' "$soft_problems" | sed 's/^/       /' >&2
         else
             echo "ERROR: refusing to delete $SANDBOX_ROOT:" >&2
-            printf '%s\n' "$problems" | sed 's/^/         /' >&2
+            printf '%s\n' "$soft_problems" | sed 's/^/         /' >&2
             echo "       Harvest or collect the work first (OPERATOR.md), use a different SANDBOX_ROOT," >&2
             echo "       or add --discard-unharvested to delete it anyway." >&2
             exit 1
         fi
     fi
+    # Move aside first, so a partial delete never leaves a half-sandbox at SANDBOX_ROOT
+    # without its marker, and never cross into a mount inside the tree.
     echo "Removing existing sandbox at $SANDBOX_ROOT ..."
-    rm -rf -- "$SANDBOX_ROOT"
+    tomb="$SANDBOX_ROOT.deleting.$$"
+    [ ! -e "$tomb" ] && [ ! -L "$tomb" ] || die "$tomb already exists; remove it by hand first"
+    mv -T -- "$SANDBOX_ROOT" "$tomb"
+    rm -rf --one-file-system -- "$tomb" \
+        || die "the old sandbox was moved to $tomb but could not be fully deleted; remove it by hand"
 fi
 mkdir -p "$SANDBOX_ROOT"
 printf 'Assembled by new-sandbox.sh; new-sandbox.sh --force only deletes directories carrying this file.\n' \
@@ -227,13 +288,21 @@ for r in prj Documentation; do
 done
 
 # --- 2. Overlay the git-ignored AI assets -------------------------------------
-if [ -d "$SOURCE_ROOT/prj/.github" ]; then
-    echo "==> Overlaying prj/.github (instructions) ..."
-    cp -r "$SOURCE_ROOT/prj/.github" "$SANDBOX_ROOT/prj/.github"
-fi
-if [ -d "$SOURCE_ROOT/prj/.agents" ]; then
-    echo "==> Overlaying prj/.agents (skills) ..."
-    cp -r "$SOURCE_ROOT/prj/.agents" "$SANDBOX_ROOT/prj/.agents"
+# Copy the directories' contents, not the directories: if the clone already has one
+# (a tracked file under it), `cp -r src dst` would nest the copy at dst/.agents/.agents.
+for d in .github .agents; do
+    if [ -d "$SOURCE_ROOT/prj/$d" ]; then
+        echo "==> Overlaying prj/$d ..."
+        mkdir -p "$SANDBOX_ROOT/prj/$d"
+        cp -r "$SOURCE_ROOT/prj/$d/." "$SANDBOX_ROOT/prj/$d/"
+    fi
+done
+# D5: prove the required assets arrived where the agent reads them, as regular files.
+if [ "$ALLOW_MISSING_ASSETS" = 0 ]; then
+    for a in "${REQUIRED_ASSETS[@]}"; do
+        [ -f "$SANDBOX_ROOT/prj/$a" ] && [ ! -L "$SANDBOX_ROOT/prj/$a" ] \
+            || die "prj/$a did not reach the sandbox as a regular file"
+    done
 fi
 
 # --- 3. Sandbox agent instructions + Claude settings + container definition ---
