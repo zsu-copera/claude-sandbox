@@ -411,3 +411,21 @@ PAT with only the **Copilot Requests** account permission, supplied as
 `COPILOT_GITHUB_TOKEN`. That would replace the stored OAuth token, and the OAuth
 authorization would then be revoked. It needs a live check that Copilot works with the
 PAT under the org license, and that push and gist creation fail with it.
+
+**Remediation in source, 2026-09-23 (`d23af8e`):** `run-copilot` now refuses, with exit
+78 and before any network use or credential purge, in four cases: a missing or non-PAT
+`COPILOT_GITHUB_TOKEN`, the retired `--login` mode, a stored non-PAT or unparseable token
+entry in `config.json`, or any GitHub token-like value in that file. It also unsets
+`GH_TOKEN` and `GITHUB_TOKEN`. The documented launch supplies the PAT from a podman secret. Shim
+regressions pass (see `VERIFY-ASSERTIONS.md`).
+
+Status:
+
+- **Not deployed.** The image's baked `run-copilot` is still the old launcher until
+  a rebuild. The old launcher already passes a secret-supplied PAT through, because
+  the environment variable takes precedence over the stored token. So the exposure
+  can be removed before the rebuild by switching the credential and removing and
+  revoking the stored token.
+- **Not yet live-verified:** Copilot working with the PAT, and the PAT's push and
+  gist refusal.
+- **Not yet done:** removing the existing stored token and revoking the OAuth authorization.

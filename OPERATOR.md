@@ -104,13 +104,15 @@ does not register a task, approve a run, inspect or change the image, install a
 firewall, or decide whether the supplied command is safe. Keep the existing
 guarded launcher and its flags; do not substitute a bare agent CLI.
 
-For an approved normal Copilot session, with login already completed:
+For an approved normal Copilot session, with the PAT secret already created
+(QUICKSTART step 4-alt):
 
 ```bash
 bash /mnt/c/work/pera/claude-sandbox/sandbox-record.sh \
   --label TASK-1-R1 --workspace "$HOME/pera-sandbox" -- \
   podman run -it --rm --name pera-copilot --userns=keep-id \
     --cap-add=NET_ADMIN --cap-add=NET_RAW \
+    --secret pera-copilot-token,type=env,target=COPILOT_GITHUB_TOKEN \
     -v "$HOME/pera-sandbox:/workspace" -v pera-copilot-config:/home/vscode/.copilot \
     -w /workspace pera-sandbox run-copilot
 ```

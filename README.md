@@ -221,18 +221,16 @@ replacement for execution evidence.
 Same sandbox, same image, same prepare — different entrypoint and auth volume:
 
 ```bash
-# ONE-TIME per machine: device-flow login; authenticate with /login, trust
-# /workspace, then exit. Shared GitHub ranges are reachable in normal mode too.
-podman run -it --rm --name pera-copilot --userns=keep-id \
-  --cap-add=NET_ADMIN --cap-add=NET_RAW \
-  -v ~/pera-sandbox:/workspace -v pera-copilot-config:/home/vscode/.copilot \
-  -w /workspace pera-sandbox run-copilot --login
+# ONE-TIME per developer: store a fine-grained PAT with the Copilot Requests account
+# permission ONLY as a podman secret (QUICKSTART step 4-alt has the exact settings).
+read -rsp 'Copilot fine-grained PAT: ' pat; printf '%s' "$pat" | podman secret create pera-copilot-token -; unset pat; echo
 
 # Normal interactive session; replace TASK-1-R1 with the approved run label.
 bash /mnt/c/work/pera/claude-sandbox/sandbox-record.sh \
   --label TASK-1-R1 --workspace "$HOME/pera-sandbox" -- \
   podman run -it --rm --name pera-copilot --userns=keep-id \
     --cap-add=NET_ADMIN --cap-add=NET_RAW \
+    --secret pera-copilot-token,type=env,target=COPILOT_GITHUB_TOKEN \
     -v "$HOME/pera-sandbox:/workspace" -v pera-copilot-config:/home/vscode/.copilot \
     -w /workspace pera-sandbox run-copilot
 ```
@@ -251,14 +249,18 @@ The seeded `~/.copilot/settings.json` pins the model to **claude-opus-4-8** (ver
 `/model` on first run — Enterprise policy must expose it). `--continue`/`--resume` work
 like Claude's. Autopilot continuation limit defaults to 5 (`--max-autopilot-continues`).
 
-**"System vault not available" at first login — answer yes (plain text).** Containers
-have no OS keyring; the token stores in the `pera-copilot-config` volume, which is the
-same posture as Claude's auth volume and the org's existing `~/.m2`/`.npmrc` plaintext
-credentials. The volume is host-user-readable only; in-container, `~/.copilot` sits
-outside `/workspace` behind Copilot's path verification (we don't pass
-`--allow-all-paths`). Treat the volume as credential storage: mount it only into
-`run-copilot` sessions, and if a machine is compromised, revoke the session at
-GitHub → Settings → Applications rather than merely deleting the volume.
+**Copilot authenticates with a narrow PAT, not `/login` (finding N3).** The agent can
+read whatever credential Copilot uses, and GitHub's address ranges are reachable (below).
+The `/login` OAuth token carries the `repo` and `gist` scopes: a command that slipped past
+the deny rules could push to any repository you can write to, or publish a gist. A
+fine-grained PAT with only the **Copilot Requests** account permission cannot. It is
+passed as `COPILOT_GITHUB_TOKEN` from a podman secret, which lives outside the workspace and the auth
+volume. `run-copilot` refuses a missing or non-PAT token, the retired `--login` mode, and
+any sign-in token left in `~/.copilot/config.json`. It cannot inspect a PAT's
+permissions, so creating the PAT narrowly is each developer's step. The volume still
+holds session state and history; treat it as private and mount it only into
+`run-copilot` sessions. Rotate the PAT (`podman secret rm`/`create`) when it expires or
+if a machine is compromised.
 
 **Firewall difference & residual risk (read this):** Copilot sessions allowlist the
 Copilot API hosts plus GitHub's published web/api IP ranges (fetched live from
@@ -267,13 +269,14 @@ are unavoidable: GitHub's load balancer rotates IPs between DNS resolutions, so 
 snapshots fail (`api.githubcopilot.com` measured 0/15 reachable without them). Because
 GitHub serves `github.com` and the Copilot API **from the same address pool**, IP-level
 filtering cannot separate them — `github.com` (where the real `Documentation` repo
-lives) is *technically connectable in every Copilot session*, and `--login` differs
-only in intent, not network reach. Additional accident-prevention controls include
+lives) is *technically connectable in every Copilot session*. The barrier against
+writes is therefore the credential: the only GitHub token present should be the
+Copilot-Requests-only PAT above. Additional accident-prevention controls include
 disabled built-in github-mcp-server, `git push`/`git remote`/`gh` deny rules,
 fetch-tool `--deny-url` on GitHub hosts, the policy hook, no `gh` binary, no staged
-Git/SSH credentials, no git remotes, and human review. The agent still holds its own
-API authentication; do not assume absent Git configuration makes every external write
-unauthenticated or that URL-tool denials constrain subprocess HTTPS.
+Git/SSH credentials, no git remotes, and human review. A PAT created with wider
+permissions than Copilot Requests restores the N3 exposure, and URL-tool denials do not
+constrain subprocess HTTPS.
 
 Weight those layers correctly. The `--deny-tool` rules match a command-identifier
 **prefix**, so `git push` is denied but `git -C . push` and `env git push` are not
@@ -326,8 +329,8 @@ separate decisions.
   root-owned state or `CLAUDE_LOCKDOWN`/`CLAUDE_HTTPS` chains indicate initialization.
   Incomplete initialization also prevents reopening. The first installed lockdown pins
   its domain list in `/run/claude-lockdown-domains` (root-owned, unreadable to the agent);
-  later lockdowns reuse it and ignore their arguments. The 15-min refresh loop and Copilot's
-  `--login` mode are unaffected — each container's domain set is fixed before its first
+  later lockdowns reuse it and ignore their arguments. The 15-min refresh loop is
+  unaffected — each container's domain set is fixed before its first
   lockdown. To get an open network again, start a fresh container.
 - **`/tmp` is writable inside the native sandbox** (`sandbox.filesystem.allowWrite`).
   Required, not incidental: Java ignores `$TMPDIR`, so `java.io.tmpdir` stays `/tmp` and
@@ -363,7 +366,7 @@ separate decisions.
 | `container/init-firewall.sh` | Serialized `open` \| `lockdown [domains...]`; durable one-way state, staged refresh, REJECT |
 | `container/prepare.sh` → `prepare-sandbox` | Warm caches via Nexus with network open |
 | `container/run-agent.sh` → `run-agent` | Lockdown (Anthropic) → purge creds → start Claude |
-| `container/run-copilot.sh` → `run-copilot` | Lockdown (Copilot hosts; `--login` adds github.com once) → purge creds → start Copilot CLI |
+| `container/run-copilot.sh` → `run-copilot` | Refuse a non-PAT/missing token or stored sign-in token (N3) → lockdown (Copilot hosts) → purge creds → start Copilot CLI |
 | `container/copilot-settings.json` | Seeded model default (claude-opus-4-8) for `~/.copilot` |
 | `container/copilot-policy.json` → `/etc/github-copilot/policy.d/10-guardrails.json` | Machine-policy `preToolUse` hook registration (root-owned; survives `disableAllHooks`) |
 | `container/guard-shell-command.js` | Selected command-pattern vetoes; known matching gaps, not a complete no-push boundary |

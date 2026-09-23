@@ -106,6 +106,11 @@ before touching the code.
   `--deny-tool` / `--deny-url` / `--disable-builtin-mcps` flags remain required
   defense-in-depth for reachable GitHub ranges. They and the policy hook have documented
   gaps; do not remove them or describe them as complete no-push enforcement.
+- **Copilot runs only on a Copilot-Requests-only fine-grained PAT (N3).** `run-copilot`
+  refuses `--login`, a missing or non-PAT `COPILOT_GITHUB_TOKEN`, and any sign-in token
+  stored in the auth volume. The `/login` OAuth token can push and create gists, and
+  GitHub is reachable, so the credential is the real no-push barrier. Do not relax these
+  refusals or document `/login` as a setup step.
 
 ## Verifying a change
 

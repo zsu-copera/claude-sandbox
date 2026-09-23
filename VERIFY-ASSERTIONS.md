@@ -189,6 +189,27 @@ The E1 contract is:
 Image packaging and deployment are separate from these source-mounted regressions.
 The existing image is not updated by editing scripts on the host.
 
+### Copilot credential guard (N3), 2026-09-23
+
+Five further shim-based caller cases cover the `run-copilot` credential guard:
+`n3-login`, `n3-no-token`, `n3-oauth-env`, `n3-stored-oauth` and `n3-unparseable`.
+Each must exit 78 with the refusal message, and must do so before any `curl`, firewall
+call, credential purge or CLI start. No synthetic token value may appear in the output.
+The existing Copilot success scenarios now supply a synthetic PAT, keep a PAT-only
+`config.json` and export `GH_TOKEN`/`GITHUB_TOKEN`. The fake CLI must receive the PAT and
+neither of the other variables. All values are synthetic; no real credential is read.
+
+Recorded 2026-09-23: `--callers-only` returned **9 passed, 0 failed** (2 Claude, 7 Copilot).
+The same fixtures run against the previous launcher failed both `n3-stored-oauth`
+(exit 77, not 78) and `refresh-warning` (`GH_TOKEN` reached the CLI), so they detect the
+missing guard. The default runner therefore has 64 scenarios. The full 64-case suite
+has not been run as one invocation.
+
+These are source-mounted checks with a fake CLI. They do not show that the real CLI
+authenticates with a PAT, that a PAT's permissions are narrow, or that the image contains
+the new launcher; the baked copy changes only after an image rebuild. The live PAT check
+is recorded in [SECURITY-REVIEW N3](SECURITY-REVIEW.md#n3-copilot-sign-in-token-capability-2026-09-23).
+
 ---
 
 ## Review-round imports (`verify-rounds.sh`)

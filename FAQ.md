@@ -404,17 +404,29 @@ pera-claude-config` (Claude) or `pera-copilot-config` (Copilot). Root cause: a v
 first created by a container without `--userns=keep-id` is unwritable — details in
 README.
 
-**Copilot: "sign in error" after authorizing in the browser.**
-Should be fixed (the firewall now allowlists GitHub's published IP ranges — GitHub's
-load balancer rotates IPs faster than per-host snapshots can track). If it recurs, run
-the session again — and check `run-copilot`'s startup output for the
+**Copilot: "sign in error" or "not authenticated".**
+Check that the session was started with
+`--secret pera-copilot-token,type=env,target=COPILOT_GITHUB_TOKEN`, and that the PAT
+has not expired and has the Copilot Requests account permission. The firewall allowlists
+GitHub's published IP ranges; also check `run-copilot`'s startup output for the
 "could not fetch api.github.com/meta" fallback warning.
 
-**Copilot: "system vault is not available — store in plain text?"**
-Answer yes. Containers have no OS keyring; the token lives in the `pera-copilot-config`
-volume at the same protection level as every other credential on your machine
-(`~/.m2/settings.xml`, `.npmrc`). Revoke server-side (GitHub → Settings → Applications)
-if a machine is ever compromised.
+<a id="copilot-refused-finding-n3"></a>
+**Copilot: `REFUSED (finding N3)`, exit 78.**
+`run-copilot` accepts only a fine-grained PAT in `COPILOT_GITHUB_TOKEN`. Set it up per
+QUICKSTART step 4-alt. If the message names `config.json`, the auth volume still holds a
+sign-in token from the retired `/login` flow, which carries the `repo` and `gist` scopes.
+Remove it without printing it, inside WSL:
+
+```bash
+podman run --rm --userns=keep-id --network none -v pera-copilot-config:/home/vscode/.copilot \
+  --entrypoint bash pera-sandbox -c 'f=$HOME/.copilot/config.json; grep -v "^[[:space:]]*//" "$f" | jq "del(.copilotTokens, .lastLoggedInUser, .loggedInUsers)" > "$f.new" && mv "$f.new" "$f"'
+```
+
+Deleting the local copy does not invalidate the token. Also revoke it: GitHub → Settings →
+Applications → Authorized OAuth Apps → **GitHub Copilot CLI** → Revoke. That signs out
+every Copilot CLI OAuth session for your account, including a Copilot CLI on the host,
+which then needs `/login` again. Do not use `/login` inside the sandbox.
 
 **`run-agent`/`run-copilot` aborts with a firewall error before the agent starts.**
 Do not bypass the wrapper. DNS resolution, rule staging/installation, state consistency,

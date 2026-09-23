@@ -125,22 +125,32 @@ Steps 1–3 are identical and shared (one sandbox serves both agents). Copilot t
 swap only step 4:
 
 ```bash
-# one-time login: /login device flow, trust /workspace, exit. The CLI will note that
-# no system vault is available and ask to store the token in plain text — answer YES
-# (containers have no keyring; the token lives in the pera-copilot-config volume,
-# same protection level as the Claude auth volume — see README §4b).
-podman run -it --rm --userns=keep-id --cap-add=NET_ADMIN --cap-add=NET_RAW \
-  -v ~/pera-sandbox:/workspace -v pera-copilot-config:/home/vscode/.copilot \
-  -w /workspace pera-sandbox run-copilot --login
+# ONE-TIME per developer (finding N3): the agent can read the credential Copilot uses,
+# so it must not be able to write to GitHub. On github.com, open Settings -> Developer
+# settings -> Fine-grained tokens and create a token with:
+#   Resource owner: your personal account     Repository access: Public repositories
+#   Account permissions: Copilot Requests ONLY  (nothing else)   Expiration: 90 days
+# Store it as a podman secret without echoing it (inside WSL):
+read -rsp 'Copilot fine-grained PAT: ' pat; printf '%s' "$pat" | podman secret create pera-copilot-token -; unset pat; echo
+# To rotate: podman secret rm pera-copilot-token, then repeat the line above.
 
 # normal interactive sessions; replace the label with the approved run's label
 bash /mnt/c/work/pera/claude-sandbox/sandbox-record.sh \
   --label TASK-1-R1 --workspace "$HOME/pera-sandbox" -- \
   podman run -it --rm --name pera-copilot --userns=keep-id \
     --cap-add=NET_ADMIN --cap-add=NET_RAW \
+    --secret pera-copilot-token,type=env,target=COPILOT_GITHUB_TOKEN \
     -v "$HOME/pera-sandbox:/workspace" -v pera-copilot-config:/home/vscode/.copilot \
     -w /workspace pera-sandbox run-copilot
 ```
+
+`run-copilot` refuses to start (exit 78) if `COPILOT_GITHUB_TOKEN` is missing or is
+not a fine-grained PAT, if `--login` is used, or if the auth volume still holds a
+sign-in token from the old `/login` flow. It cannot check a PAT's permissions, so
+grant **Copilot Requests only**. The `/login` OAuth token carries the `repo` and
+`gist` scopes and could push to every repository you can write to. If you signed in
+that way before, follow [the FAQ migration](FAQ.md#copilot-refused-finding-n3).
+On first start, confirm `/workspace` as trusted.
 
 Run that block in an interactive WSL terminal, not through a piped/non-interactive
 shell. The recorder creates a fresh private run directory under
@@ -440,5 +450,5 @@ reset — review first.
   to repeat it in your prompts.
 - **Login doesn't persist between runs?** Recreate the affected auth volume and log in
   once more: `podman volume rm -f pera-claude-config` (Claude) or
-  `podman volume rm -f pera-copilot-config` (Copilot) — see README "Login not
-  persisting?" for why.
+  `podman volume rm -f pera-copilot-config` (Copilot, which then needs only the PAT
+  secret, not a login) — see README "Login not persisting?" for why.
