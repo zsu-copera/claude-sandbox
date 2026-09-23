@@ -380,7 +380,6 @@ separate decisions.
 |---|---|
 | `QUICKSTART.md` / `FAQ.md` | Newcomer path / common questions & troubleshooting |
 | `new-sandbox.sh` | Assemble `~/pera-sandbox` inside the WSL distro (**primary path**) |
-| `New-Sandbox.ps1` | Windows/Docker-Desktop variant of the same (kept for parity) |
 | `.devcontainer/{devcontainer.json,Dockerfile}` | Container definition (CentOS Stream 9) |
 | `container/init-firewall.sh` | Serialized `open` \| `lockdown [domains...]`; durable one-way state, staged refresh, REJECT |
 | `container/prepare.sh` → `prepare-sandbox` | Warm caches via Nexus with network open |

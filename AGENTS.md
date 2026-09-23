@@ -46,7 +46,7 @@ procedure, `FAQ.md` for troubleshooting. Do not duplicate their content here.
   through `wsl -d centos-9`. Path separators and line endings both matter (below).
 - **Runtime scripts execute inside WSL or the container.** `verify-scaffold.sh` also runs
   in Git Bash on Windows; `verify-firewall.sh` uses WSL/Podman and disposable containers.
-  `New-Sandbox.ps1` is unsupported drift, not the supported assembly path.
+  `new-sandbox.sh`, run in WSL, is the only assembly path; `New-Sandbox.ps1` was removed (D4).
 - **This directory is its own git repository** (standalone, default branch `main`, private
   backup remote `origin` — see Promotion). Inspect the current branch before working. As of
   2026-09-23 `main` contains the E1, round-intake, task-operator and context-handoff work;

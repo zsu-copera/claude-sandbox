@@ -1,6 +1,6 @@
 #!/bin/bash
-# WSL-native equivalent of New-Sandbox.ps1 — assembles the disposable Claude Code
-# sandbox INSIDE the WSL distro filesystem (fast container bind mounts; /mnt/c
+# WSL-native assembly of the disposable agent sandbox. It builds
+# INSIDE the WSL distro filesystem (fast container bind mounts; /mnt/c
 # would go through 9p and cripple the Maven/npm builds).
 #
 # Run from Windows:   wsl -d centos-9 -- bash /mnt/c/work/pera/claude-sandbox/new-sandbox.sh [--force]
