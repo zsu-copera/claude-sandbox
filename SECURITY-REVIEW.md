@@ -446,6 +446,12 @@ against the real volume then passed, exit 0, and no token-like value remained in
 file. The removed token was not copied or backed up. These runs were headless;
 interactive startup and a real task under the PAT are not yet exercised.
 
-- **Outstanding:** the owner must revoke the Copilot CLI OAuth authorization. Deleting
-  the local copy does not invalidate the token. Also outstanding: an image rebuild, so the baked
-  launcher enforces the guard.
+- **Outstanding:** an image rebuild, so the baked launcher enforces the guard.
+
+**Revocation, 2026-09-23:** the owner reported revoking the Copilot CLI OAuth authorization
+and then signing in again on the Windows host only. The new host token is outside the sandbox.
+Revocation could not be independently confirmed because the removed token was deliberately
+not retained. Afterwards the sandbox auth volume still held no token-like value, and
+`pera-copilot-token` was the only podman secret. N3 is **remediated for this machine's
+sandbox**, pending the image rebuild. Other developers must follow QUICKSTART step 4-alt,
+including the FAQ migration if they ever used `/login` inside the sandbox.
