@@ -27,16 +27,15 @@ Treat `overlay/CLAUDE.md` as a text file you may be asked to edit. Never as your
 build definition, egress firewall, entrypoint scripts, and agent-instruction overlay that
 together produce an isolated container for autonomous work on the PERA codebase.
 
-There are deliberately two copies:
+There were deliberately two copies; the second is now retired:
 
 | Copy | Role |
 |---|---|
-| `C:\work\pera\claude-sandbox` (**this one**) | Where the scaffold is edited and proven. Kept separate so sandbox work can proceed while `Documentation` and `prj` are checked out for other tickets. |
-| `Documentation` repo, branch `claude-sandbox`, at `External-Team/ai-resources/Sandbox-Workspace/claude-sandbox/` | The shared copy other developers consume. Changes are promoted here after they are proven. |
+| `C:\work\pera\claude-sandbox` (**this one**), remote `origin` | Canonical source and distribution point (see Distribution). Kept separate from `Documentation` and `prj` so sandbox work can proceed while those are checked out for tickets. |
+| `Documentation` repo, branch `claude-sandbox`, at `External-Team/ai-resources/Sandbox-Workspace/claude-sandbox/` | **Retired**, stale, awaiting replacement by a pointer. Do not promote to it. |
 
-The shared copy is currently **behind** this one. Do not "fix" the scaffold's own docs to point
-at the repo path — they name `C:\work\pera\claude-sandbox` on purpose, because that is where a
-consumer deploys it.
+The scaffold's docs name `C:\work\pera\claude-sandbox` on purpose, because that is where a
+consumer clones it. Do not change them to point at any repository path.
 
 Read `README.md` for the design and the file-by-file table, `QUICKSTART.md` for the operating
 procedure, `FAQ.md` for troubleshooting. Do not duplicate their content here.
@@ -168,29 +167,26 @@ agent workspace. Do not infer an audit baseline from the currently checked-out h
 branch, automatically merge collected work, or treat a partial two-repo operation
 as complete. Registration and collection do not authorize a real task run.
 
-## Promotion, and an open decision
+## Distribution
 
-As of 2026-09-09 this directory is a standalone git repository with its own history. Since
-2026-09-23 it has a **private backup remote** (`origin`). That remote is a backup, not a
-distribution point: nobody else consumes the scaffold from it, and pushing to it does not
-promote anything.
+As of 2026-09-09 this directory is a standalone git repository with its own history.
+**Decided 2026-09-23 (option A):** its private GitHub remote (`origin`) is the canonical
+source and the distribution point. Consumers clone `main` to `C:\work\pera\claude-sandbox`.
+Access is by repository invitation.
 
-The shared copy other developers consume is still the one in `Documentation`, on branch
-`claude-sandbox` under `External-Team/ai-resources/Sandbox-Workspace/claude-sandbox/`, and it is
-behind. **Which of the two becomes the source of truth is not yet decided** — the options are a
-real remote for this repo with the Documentation copy retired or reduced to a pointer, or
-keeping Documentation as the distribution point and treating this as an upstream. Do not assume
-one; ask.
+The old copy in `Documentation` (branch `claude-sandbox`, under
+`External-Team/ai-resources/Sandbox-Workspace/claude-sandbox/`) is **retired**. It is behind and
+must not receive further file-level promotions. Its replacement by a pointer README is a
+change to the shared `Documentation` repository. That change needs that repository's owner
+and must not be made from a ticket checkout in use. Until the pointer lands, anyone reading
+the old copy gets stale scripts.
 
-Until that is settled, if you are asked to help promote:
-
-- Both copies now have a `.gitattributes`, but they differ in scope: Documentation's is
-  selective (scripts and JSON pinned to LF, human-facing docs left at the platform default);
-  this one is uniform LF. A promotion that copies this folder over that one replaces the rule
-  as well as the files — deliberate or not, notice it.
-- Exclude `.git`, `.gitattributes`, `.gitignore` and `.claude` from any file-level copy.
-- No branch in `Documentation` other than `claude-sandbox` contains a single file under
-  `Sandbox-Workspace/`, so sandbox commits there cannot conflict with ticket work.
+- Publish by pushing reviewed commits to `origin/main`. There is still no release
+  tagging or CI gate (D2/D3, V1).
+- The old copy's selective `.gitattributes` and its file differences no longer need
+  reconciling; do not copy this folder over it.
+- No branch in `Documentation` other than `claude-sandbox` contains a file under
+  `Sandbox-Workspace/`, so the pointer commit cannot conflict with ticket work.
 
 ## Known findings
 

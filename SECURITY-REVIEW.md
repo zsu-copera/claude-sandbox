@@ -355,3 +355,19 @@ source-mounted E1 firewall suite has not been rerun against this image, and real
 provider refreshes, the lock's full timeout and Claude Code startup remain untested
 on it. Treat E1 as **deployed in the current image by byte parity**, not as a fresh
 runtime verification. N1, E2 to E6, V1/N2 and the distribution findings are unaffected.
+
+## Distribution decision, 2026-09-23
+
+The 2026-09-09 D1/D6 conclusions in the register are left as they were. Later status:
+
+- **D1:** the scaffold now has a private GitHub remote holding `main` and all four feature
+  branches. The owner chose it as both canonical source and distribution point (option A).
+  The repository is owned by an individual account; moving it to organization ownership
+  is a separate governance choice.
+- **D6:** the `Documentation` branch `claude-sandbox` copy is retired and must not be
+  promoted to again. Until a pointer replaces it, consumers of that copy get stale scripts,
+  including the pre-E1 firewall. Replacing it needs the `Documentation` repository's owner
+  and is not yet done.
+- **D7:** reconciling the two `.gitattributes` files is no longer needed.
+- D2/D3 (mutable inputs, no releases) are unchanged. Pushing `main` is not a reviewed
+  release process.
