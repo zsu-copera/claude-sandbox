@@ -407,7 +407,8 @@ advanced and may not include that outstanding edit again.
 No — `--force` deletes the workspace including its git objects. It now refuses when a
 branch, HEAD or stash holds commits that no ref in the source repo has, so this takes
 `--discard-unharvested`, or work it does not look for: tags and other non-branch refs,
-and files outside `prj`/`Documentation`. Harvest before every reset.
+and reflog-only commits. Unexpected files at the workspace root are reported, but only by
+name. Harvest before every reset.
 (The reflog trick doesn't help: the entire repo is gone, not just the ref.)
 
 ## Troubleshooting

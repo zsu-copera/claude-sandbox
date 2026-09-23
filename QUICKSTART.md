@@ -42,11 +42,16 @@ variable to set (`WIN_M2`/`WIN_NPMRC` for the files, `SANDBOX_GIT_NAME`/`SANDBOX
 for the identity), for example
 `wsl -d centos-9 -- env SANDBOX_GIT_NAME="Your Name" SANDBOX_GIT_EMAIL=you@example.org bash /mnt/c/work/pera/claude-sandbox/new-sandbox.sh`.
 **`--force` deletes the old workspace, including its caches.** It refuses (finding V2)
-when the workspace is registered to a task, a repo has uncommitted or in-progress work,
-a container is using it, or a branch, HEAD or stash holds commits that no ref in
-`C:\work\pera\prj`/`Documentation` has. It lists what it found. Harvest or collect first,
-or use a different `SANDBOX_ROOT`. `--discard-unharvested` deletes anyway, after
-listing the problems. It also stops if the git-ignored `prj/.github` / `prj/.agents`
+and lists what it found when:
+- the workspace is registered to a task;
+- a repo has uncommitted or in-progress work, or linked worktrees;
+- HEAD, a branch or a stash entry holds commits that no ref in
+  `C:\work\pera\prj`/`Documentation` has;
+- the workspace root holds files assembly did not create.
+
+Harvest or collect first, or use a different `SANDBOX_ROOT`. `--discard-unharvested`
+deletes anyway after listing them, except while a container has the workspace mounted
+or a round import awaits `recover`. It also stops if the git-ignored `prj/.github` / `prj/.agents`
 assets are missing (finding D5); `--allow-missing-assets` assembles without them.
 To install an image update into an existing sandbox, use the update section below instead.
 

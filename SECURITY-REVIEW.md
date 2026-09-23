@@ -624,8 +624,8 @@ Branch `fix/open-items-phase2`, from `main` after Phase 1.
 
 | Finding | Outcome |
 |---|---|
-| V2 | Every run requires `SANDBOX_ROOT` to be strictly inside `$HOME`, not a symlink, and apart from `SOURCE_ROOT` and the scaffold. `--force` deletes only a directory with the new `.pera-sandbox-workspace` marker or the legacy sandbox layout. It then refuses when a task registration names the workspace, when `sandbox-round.sh inspect` reports a repo other than `clean` or cannot inspect it, or when HEAD, a local branch or `refs/stash` is contained in no ref of the source repo. `--discard-unharvested` lists those problems and proceeds |
-| D5 | The four git-ignored assets (`.github/copilot-instructions.md`, `.github/a11y.instructions.md`, both `SKILL.md` files) are required unless `--allow-missing-assets` is given. `prepare.sh` still only warns |
+| V2 | Every run requires `SANDBOX_ROOT` to be strictly inside `$HOME`, with no symlink in the path, and apart from `SOURCE_ROOT`, both resolved source repos and the scaffold. `--force` deletes only a directory with the new `.pera-sandbox-workspace` marker or the legacy sandbox layout. It refuses when a task registration names or overlaps the workspace (or a record is unreadable), when `sandbox-round.sh inspect` reports a repo other than `clean` or cannot inspect it, when linked worktrees or unexpected top-level entries exist, or when HEAD, a local branch or any stash entry (loose or packed) is contained in no ref of the source repo. `--discard-unharvested` lists those and proceeds, except for a running container or a pending round recovery, which always refuse. Deletion moves the tree to a tombstone and then runs `rm -rf --one-file-system` |
+| D5 | The four git-ignored assets (`.github/copilot-instructions.md`, `.github/a11y.instructions.md`, both `SKILL.md` files) are required, as regular files in the source and again in the sandbox after the copy, unless `--allow-missing-assets` is given. The copy now merges directory contents, so a tracked file under `.agents` can no longer nest the overlay at `.agents/.agents`. `prepare.sh` still only warns |
 
 Design points:
 - No host git runs against the old sandbox's repositories: their config is agent-written,
@@ -639,5 +639,14 @@ Design points:
 - **Effect on this host:** `~/pera-sandbox` is registered to EEP-24 and JWA-2906, so a
   plain `--force` there now refuses. A new task should use a new `SANDBOX_ROOT`.
 
-Not covered: tags and other non-branch refs, and files outside `prj`/`Documentation` in the
-workspace. Evidence: `verify-assembly.sh`, 22 of 22; see `VERIFY-ASSERTIONS.md`.
+**Independent review.** A context-isolated reviewer found one real fail-open: gc packs
+`refs/stash`, which the first version did not read. It also found gaps: older stash entries,
+linked worktrees, unreadable or nested registrations, symlinks via `link/`, unresolved source
+repos, `under /`, non-atomic deletion, round-recovery state outliving a reset, and the asset
+copy nesting. All of these were fixed in `cc95a0d`. Not fixed: the window between the checks
+and the tombstone rename. It is narrow, and a container that is running at check time is
+already refused.
+
+Not covered: tags and other non-branch refs, reflog-only commits, and the contents of
+unexpected top-level entries, which are reported but not inspected. Evidence:
+`verify-assembly.sh`, 33 of 33; see `VERIFY-ASSERTIONS.md`.

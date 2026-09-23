@@ -1130,7 +1130,8 @@ confirmed with `/model` in a live session. Overlay text reaches new sandboxes on
 
 ### Reset safety and required assets (V2, D5), 2026-09-23
 
-New `verify-assembly.sh` (run in WSL; needs the existing image): **22 passed, 0 failed**,
+New `verify-assembly.sh` (run in WSL; needs the existing image): **33 passed, 0 failed**
+after the review fixes (22 in the first version),
 in a throwaway tree under `$HOME` with fake source repos, credential files and task state.
 It never references the real workspace. Cases: fresh assembly writes the marker. A reset of
 a clean, harvested sandbox proceeds. Refused, with the workspace kept: an unharvested HEAD,
@@ -1138,7 +1139,19 @@ an unharvested side branch, a stash, a dirty worktree, a registered workspace, a
 unavailable. `--discard-unharvested` proceeds. Containment refuses `$HOME`, outside
 `$HOME`, inside or containing the source, and a symlink. A foreign directory is refused even
 with `--discard-unharvested` and kept. The legacy layout is accepted. Missing assets are
-refused, or warned about with `--allow-missing-assets`. Argument misuse is refused.
+refused, or warned about with `--allow-missing-assets`. Argument misuse is refused. Added after review: packed
+branch and packed stash, an older stash entry, a malformed `packed-refs` line, a linked
+worktree, an unexpected top-level file, nested and unreadable registrations, a trailing-slash
+symlink, a symlinked asset, and asset placement with a tracked `.agents` file in the clone.
+A running container mounting the workspace is refused even with `--discard-unharvested`.
+Every refusal is asserted to keep the workspace, and no run may leave a tombstone.
+
+Mutation check: the same 33 cases against the pre-fix `64dc722` script give **16 failures**.
+They include T18, where the old script deleted a workspace mounted by a running container.
+Several others fail partly because the old nested asset copy made every later check report
+`dirty`, so the old silent loss of a packed stash is shown by the reviewer's replica rather
+than by T10. A pending round recovery (`recovery-required`) is refused by code path but not
+exercised: that needs a genuine interrupted import.
 
 Read-only checks on the real host: `sandbox-round.sh inspect` reports the real `prj` and
 `Documentation` as `clean`, so the git-ignored overlay does not make a real reset look
