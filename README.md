@@ -328,8 +328,9 @@ separate decisions.
   to loopback resolvers, and root may reach only the IPv4 nameservers in
   `/etc/resolv.conf`. Allowlisted names come from the pinned `/etc/hosts` block. An
   unlisted name such as `github.com` does not resolve, and the lookup fails in
-  milliseconds. The firewall is IPv4-only (`ip6tables` is not configured). The image and
-  host used so far give containers no IPv6 address; confirm that holds on any new host.
+  milliseconds. IPv6 is default-deny, with only loopback allowed (finding N4), whenever
+  `ip6tables` works. Lockdown refuses if a non-loopback IPv6 interface exists but cannot
+  be filtered, and a refresh refuses if the IPv6 policy has been changed.
   Data can still be encoded in HTTPS to the allowlisted provider endpoints.
 - **Maven "connection refused" at runtime** = the firewall doing its job. Re-run
   `prepare-sandbox` (network open) if a genuinely new dependency is needed. You cannot

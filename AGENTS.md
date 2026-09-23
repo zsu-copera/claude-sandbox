@@ -98,7 +98,8 @@ before touching the code.
   before any ACCEPT, including loopback. Root DNS is limited to the configured
   resolvers, and the allowlisted names are pinned in root-owned `/etc/hosts` after each
   activation. It relies on the pinned domain list: if the agent's scoped sudo could
-  choose names, root DNS would become a channel.
+  choose names, root DNS would become a channel. IPv6 is default-deny at the same
+  lockdown (N4), because every other rule is IPv4.
 - **`prepare.sh` strips `_remote.repositories` from the warmed Maven cache.** Without it the
   cache is present but unusable offline, because the `settings.xml` declaring the repository id
   is credentialed and gets purged by design.

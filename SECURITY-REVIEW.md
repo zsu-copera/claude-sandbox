@@ -477,7 +477,7 @@ controls.
 ## E6 closure in source, 2026-09-23
 
 Implemented in `dddc672` under the containment decision above. The owner approved the
-design; **the implementation diff still needs owner review before the rebuild**. After lockdown, non-root DNS is REJECTed before any ACCEPT, including
+design and then the implementation diff. After lockdown, non-root DNS is REJECTed before any ACCEPT, including
 over loopback, so the agent cannot query any resolver. Root, meaning the firewall helper
 and its refresh loop, may query only the IPv4 nameservers in `/etc/resolv.conf`, and only
 for the pinned domain list. Allowlisted names reach the agent through a root-owned
@@ -494,8 +494,18 @@ to using a hosted model. Unattended use additionally still requires E2/E3.
 |---|----------|------|-------|---------------|------------|
 | N4 | ⚪ LOW | `container\init-firewall.sh` | whole script | Firewall is IPv4-only: no `ip6tables` policy, so IPv6 egress would be unfiltered on a host that gives containers IPv6 | 8/10 |
 
-N4 is conditional. The containers observed on this host had no IPv6 address, so nothing
-was reachable over IPv6 here. It matters for portability: on another host or network mode
-with IPv6, both the HTTPS allowlist and E6 could be bypassed over IPv6. The candidate fix is
-a default-deny `ip6tables` policy at initial lockdown, allowing only loopback. It is not
-implemented.
+N4 is conditional. The containers observed on this host have only link-local IPv6 on
+`eth0` and no global IPv6 route. It matters for portability: on a host or network mode with
+routed IPv6, both the HTTPS allowlist and E6 could be bypassed over IPv6.
+
+**N4 remediation in source, 2026-09-23 (`b161401`, owner-approved):**
+- Initial lockdown sets the IPv6 policies to DROP whenever `ip6tables` works, allowing only
+  loopback, with REJECTs for fast failure.
+- It refuses to lock down if a non-loopback IPv6 interface exists but cannot be filtered.
+  Otherwise it records that IPv6 rules are absent.
+- Refresh refuses if saved IPv6 state is missing or invalid, or if the IPv6 OUTPUT policy
+  is no longer DROP.
+- 66 of 66 regressions passed. A real lockdown on the current image installed the expected
+  IPv6 rules.
+
+Deployment is bundled with the E6 and N3 image rebuild.

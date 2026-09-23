@@ -232,10 +232,18 @@ Recorded 2026-09-23: the full default runner returned **64 passed, 0 failed, 0 s
 (54 firewall scenarios on both backends, 9 caller scenarios, 1 scoped-sudo scenario) in one
 invocation.
 
+N4 then added IPv6 default-deny. `locked()` now asserts that `ip6tables` has DROP policies
+and exactly four rules: loopback in and out, and two REJECTs. The new `state-ipv6` scenario
+reopens the IPv6 OUTPUT policy after lockdown and requires that `open` and refresh both
+refuse, with the IPv4 rules unchanged. Recorded the same day: the full default runner
+returned **66 passed, 0 failed, 0 skips** (56 firewall, 9 caller, 1 scoped-sudo).
+
 Live check, same day, real image with the firewall and Copilot launcher mounted from
 source, throwaway workspace:
 - **Headless Copilot 1.0.83** (PAT) and **Claude Code 2.1.269** each answered their prompt.
-- In both, the helper's production probe reported `non-root DNS refused`.
+- In both, the helper's production probe reported `non-root DNS refused`. Repeated after
+  N4 with the final script: both CLIs still answered, and a real lockdown installed the
+  expected IPv6 rules. The containers on this host have link-local IPv6 on `eth0`.
 - As the agent user:
   - the allowlisted names resolved from `/etc/hosts`;
   - `github.com` was unresolvable, failing in 6 ms;
@@ -246,7 +254,7 @@ The allowlist additions came from a discovery run that logged only query names:
 `api.business.githubcopilot.com`, the observed licence endpoint, and
 `api.individual.githubcopilot.com`. Claude needed no additions. Not covered: interactive
 sessions, tool calls inside Claude's bubblewrap sandbox, prepare-staged CLIs, Maven/npm
-builds under the change, IPv6-enabled hosts, and the image rebuild.
+builds under the change, hosts with routed IPv6, and the image rebuild.
 
 ---
 
