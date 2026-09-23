@@ -202,8 +202,7 @@ neither of the other variables. All values are synthetic; no real credential is 
 Recorded 2026-09-23: `--callers-only` returned **9 passed, 0 failed** (2 Claude, 7 Copilot).
 The same fixtures run against the previous launcher failed both `n3-stored-oauth`
 (exit 77, not 78) and `refresh-warning` (`GH_TOKEN` reached the CLI), so they detect the
-missing guard. The default runner therefore has 64 scenarios. The full 64-case suite
-has not been run as one invocation.
+missing guard. The default runner therefore has 64 scenarios.
 
 These are source-mounted checks with a fake CLI. They do not show that the real CLI
 authenticates with a PAT, that a PAT's permissions are narrow, or that the image contains
@@ -212,6 +211,42 @@ is recorded in [SECURITY-REVIEW N3](SECURITY-REVIEW.md#n3-copilot-sign-in-token-
 It covered headless Copilot 1.0.83 with the source-mounted launcher: the PAT was refused
 push, fetch, private-repository reads and gist creation, and the real auth volume
 was refused until its stored OAuth token was removed.
+
+### Agent DNS closed (E6), 2026-09-23
+
+The 54 firewall scenarios now also assert the E6 contract:
+
+- The first two OUTPUT rules REJECT non-root udp/tcp port 53.
+- Root DNS is accepted only to the configured IPv4 resolver; an IPv6 nameserver entry is ignored.
+- No unrestricted port-53 ACCEPT remains.
+- `/etc/hosts` stays root-owned 0644 with one pinned block, keeps podman's entries and
+  never pins an ignored supplied name.
+
+The pinned addresses follow the rules. Refreshes, including repeated alternation, write
+the new addresses and remove superseded ones. Pre-activation failures keep the previous
+names. Post-activation cleanup and smoke failures publish the new names. Interrupted
+refreshes are checked after their retry. The fixture containers lack CAP_SETUID, so the
+helper's non-root DNS probe is asserted to report itself skipped, never passed.
+
+Recorded 2026-09-23: the full default runner returned **64 passed, 0 failed, 0 skips**
+(54 firewall scenarios on both backends, 9 caller scenarios, 1 scoped-sudo scenario) in one
+invocation.
+
+Live check, same day, real image with the firewall and Copilot launcher mounted from
+source, throwaway workspace:
+- **Headless Copilot 1.0.83** (PAT) and **Claude Code 2.1.269** each answered their prompt.
+- In both, the helper's production probe reported `non-root DNS refused`.
+- As the agent user:
+  - the allowlisted names resolved from `/etc/hosts`;
+  - `github.com` was unresolvable, failing in 6 ms;
+  - `dig` to the configured resolver and to `1.1.1.1` got no answer;
+  - writing `/etc/hosts` was refused.
+
+The allowlist additions came from a discovery run that logged only query names:
+`api.business.githubcopilot.com`, the observed licence endpoint, and
+`api.individual.githubcopilot.com`. Claude needed no additions. Not covered: interactive
+sessions, tool calls inside Claude's bubblewrap sandbox, prepare-staged CLIs, Maven/npm
+builds under the change, IPv6-enabled hosts, and the image rebuild.
 
 ---
 

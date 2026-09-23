@@ -15,7 +15,11 @@ CLI, `--allow-all-tools`). Isolation layers:
    never your real working copies or the Windows filesystem.
 2. **Firewall** — guarded startup restricts outbound HTTPS to the active provider's
    resolved IPv4 addresses and configured CIDRs. Copilot includes shared GitHub ranges;
-   DNS, loopback and established/related traffic remain allowed. The policy is intended
+   loopback and established/related traffic remain allowed. **The agent has no DNS**
+   (finding E6): only root, meaning the firewall helper and its refresh loop, may query
+   the container's configured resolvers. The agent resolves the allowlisted names from
+   a root-owned `/etc/hosts` that each lockdown and refresh rewrites, and every other
+   lookup fails immediately. The policy is intended
    to block dependency registries, Bitbucket and dev databases (AS400 / Oracle), not
    provide a hostname-level or complete no-exfiltration boundary. Blocked connections
    are REJECTed so tools fail fast.
@@ -192,7 +196,8 @@ persists in the `pera-claude-config` volume) and confirm the bypass prompt.
 rules and pins both the domain list and the selected backend. Later refreshes keep those
 rules in place: an ipset swap, or replacement of one jump to a staged per-IP chain,
 activates the new addresses. All configured domains must resolve; incomplete DNS results
-or staging failures leave the previous snapshot active. Errors are visible on stderr.
+or staging failures leave the previous snapshot active. Right after activation, the pinned
+`/etc/hosts` block is rewritten to the new addresses. Errors are visible on stderr.
 An error after activation (for example, obsolete-rule cleanup or a provider probe) does
 not undo the new restrictions. The agent can continue under the retained rules, but
 provider connectivity may degrade until a refresh succeeds.
@@ -319,8 +324,13 @@ separate decisions.
   `.secrets/` + `~/.npmrc` are purged before every run and deny rules block reading them,
   but keep unrelated secrets out of the sandbox. Dev DB creds committed in test code are
   inert behind the firewall.
-- **DNS egress stays open** (needed to resolve the API); the threat model is agent mistakes
-  on a trusted repo, not malware exfiltration.
+- **Agent DNS is closed (E6).** Port 53 is refused for every non-root user, including
+  to loopback resolvers, and root may reach only the IPv4 nameservers in
+  `/etc/resolv.conf`. Allowlisted names come from the pinned `/etc/hosts` block. An
+  unlisted name such as `github.com` does not resolve, and the lookup fails in
+  milliseconds. The firewall is IPv4-only (`ip6tables` is not configured). The image and
+  host used so far give containers no IPv6 address; confirm that holds on any new host.
+  Data can still be encoded in HTTPS to the allowlisted provider endpoints.
 - **Maven "connection refused" at runtime** = the firewall doing its job. Re-run
   `prepare-sandbox` (network open) if a genuinely new dependency is needed. You cannot
   reopen a container that has locked down (see next item) — prepare is a separate

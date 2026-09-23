@@ -473,3 +473,29 @@ sequence. They were made by the scaffold owner after N3 was remediated.
 N1 stays a defense-in-depth gap under this policy. Do not extend the hook's patterns
 to try to reach the unattended tier. The requirement is met by credential and network
 controls.
+
+## E6 closure in source, 2026-09-23
+
+Implemented in `dddc672` under the containment decision above. The owner approved the
+design; **the implementation diff still needs owner review before the rebuild**. After lockdown, non-root DNS is REJECTed before any ACCEPT, including
+over loopback, so the agent cannot query any resolver. Root, meaning the firewall helper
+and its refresh loop, may query only the IPv4 nameservers in `/etc/resolv.conf`, and only
+for the pinned domain list. Allowlisted names reach the agent through a root-owned
+`/etc/hosts` block, rewritten immediately after each activation. Startup and every refresh
+also check that a non-root DNS query fails. The Copilot allowlist gained the licence
+endpoints found by a names-only discovery run. Evidence is in `VERIFY-ASSERTIONS.md`: 64 of
+64 regressions, plus live headless Copilot and Claude runs with the source-mounted scripts.
+
+Status: **not deployed** until the image is rebuilt, together with N3. After deployment, E6's
+residual is data encoded in HTTPS to the allowlisted provider endpoints. That is inherent
+to using a hosted model. Unattended use additionally still requires E2/E3.
+
+| # | Severity | File | Lines | Vulnerability | Confidence |
+|---|----------|------|-------|---------------|------------|
+| N4 | ⚪ LOW | `container\init-firewall.sh` | whole script | Firewall is IPv4-only: no `ip6tables` policy, so IPv6 egress would be unfiltered on a host that gives containers IPv6 | 8/10 |
+
+N4 is conditional. The containers observed on this host had no IPv6 address, so nothing
+was reachable over IPv6 here. It matters for portability: on another host or network mode
+with IPv6, both the HTTPS allowlist and E6 could be bypassed over IPv6. The candidate fix is
+a default-deny `ip6tables` policy at initial lockdown, allowing only loopback. It is not
+implemented.

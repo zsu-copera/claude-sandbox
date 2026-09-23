@@ -307,11 +307,21 @@ explicitly. See the coverage table in QUICKSTART step 3.
 That folder IS the deliberate, single output channel — a disposable copy containing
 nothing you can lose. Isolation means a precisely scoped write surface, not a hermetic
 seal: the agent can't see your real working copies, `C:\`, other WSL paths, or the
-network without the configured firewall restrictions. Those restrictions include DNS
-and, for Copilot, shared GitHub address ranges; the workspace is the intended review
+network without the configured firewall restrictions. Those restrictions include agent
+DNS, which is closed (only pinned names resolve), and, for Copilot, shared GitHub address
+ranges; the workspace is the intended review
 channel, not a proven exclusive data channel. Treat sandbox contents as unreviewed
 input until a human reviews and merges them: inspect with `git diff`, don't run builds
 from it on the host.
+
+**Why does `Could not resolve host` appear inside the sandbox?**
+That's expected (finding E6). The agent has no DNS; only the allowlisted endpoints resolve,
+from a root-owned `/etc/hosts` block the firewall rewrites on each refresh. Registries,
+`github.com` and telemetry hosts fail at name lookup, quickly, where they previously failed
+at connect. If an agent CLI itself stops working after an update, it may have started
+using a new endpoint. Find its name with a separately approved discovery run, and add
+it to the launcher's allowlist through review. Do not edit `/etc/hosts` or bypass the
+wrapper.
 
 **Can the agent see git history / read old commits?**
 Yes — the full history of the working branch, deliberately: `git blame`, prior-conversion

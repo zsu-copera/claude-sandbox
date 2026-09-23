@@ -427,8 +427,9 @@ reset — review first.
 - **Guarded startup is mandatory.** Use `run-agent` or `run-copilot`, not a bare CLI
   from an uninitialized shell. All configured domain names must resolve, the first
   non-CIDR endpoint must answer the positive probe, and `example.com` must fail the
-  negative probe. CIDR-only lists skip the positive probe. This is not an exhaustive
-  test of every permitted or forbidden destination.
+  negative probe. The first endpoint must also be pinned in `/etc/hosts`, and a DNS
+  query from a non-root user must fail. CIDR-only lists skip the positive probe. This
+  is not an exhaustive test of every permitted or forbidden destination.
 - **Unit tests only.** The dev AS400/Oracle databases are unreachable *by design*.
   DB-dependent verification happens after review, on-network.
 - **Never push from the sandbox.** Review and publish from the host; do not treat

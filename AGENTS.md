@@ -94,6 +94,11 @@ before touching the code.
   `/usr/local/bin/init-firewall.sh` — `Defaults secure_path` excludes `/usr/local/bin`.
 - **Blocked egress REJECTs rather than DROPs**, so an autonomous agent fails fast instead of
   hanging on TCP timeouts.
+- **The agent has no DNS (E6).** `init-firewall.sh` REJECTs port 53 for non-root users
+  before any ACCEPT, including loopback. Root DNS is limited to the configured
+  resolvers, and the allowlisted names are pinned in root-owned `/etc/hosts` after each
+  activation. It relies on the pinned domain list: if the agent's scoped sudo could
+  choose names, root DNS would become a channel.
 - **`prepare.sh` strips `_remote.repositories` from the warmed Maven cache.** Without it the
   cache is present but unusable offline, because the `settings.xml` declaring the repository id
   is credentialed and gets purged by design.
