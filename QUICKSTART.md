@@ -99,7 +99,7 @@ Coverage rules (a profile only builds offline if its modules were warmed):
 | Warmed profile | Also covers offline | Notes |
 |---|---|---|
 | `agencyWWW` | `agencyintra` | intra = internal WAR (`iagency`) — build with `-DBUILD=productionIntra`, no new downloads |
-| `memberWWW` | `memberintra` (`imember`) | identical module set; member tests use Vitest |
+| `memberWWW` | `memberintra` (`imember`) | identical module set; most member tests use Karma, a few use Vitest (the sandbox's `CLAUDE.md` says how to tell) |
 | `vendorWWW` | — | `vendorintra` and `intra` add the **itools** module — warm those profiles explicitly |
 
 A profile the prepare didn't warm fails fast and loudly offline (that's the firewall

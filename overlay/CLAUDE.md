@@ -8,13 +8,16 @@ workspace. This file replaces the normal Windows workspace instructions.
 
 ## Hard environment constraints — read first
 
-- **Network is restricted by the active provider's address allowlist.** DNS remains
-  allowed, and Copilot also requires shared GitHub address ranges. Reachability does
-  not authorize any use beyond the provider transport. Blocked connections fail with
-  "connection refused". Do **not** attempt `npm install`, dependency additions/upgrades,
+- **Network is restricted by the active provider's address allowlist, and you have no
+  DNS.** Only the provider's allowlisted names resolve, from a root-owned `/etc/hosts`
+  block; any other lookup fails, which is expected, not a fault to fix. Copilot also
+  requires shared GitHub address ranges. Reachability does not authorize any use beyond
+  the provider transport. Blocked connections fail with "connection refused". Do **not**
+  attempt `npm install`, dependency additions/upgrades,
   `git fetch`/`pull`/`push`, or downloads of any kind. Everything needed is pre-installed:
   the Maven cache at `/workspace/.m2/repository` (**not** `~/.m2`, which does not exist —
-  the image points Maven there via `MAVEN_OPTS`) is warmed for the `agencyWWW` profile, each
+  the image points Maven there via `MAVEN_OPTS`) is warmed for the profiles chosen at
+  prepare (default `agencyWWW`), each warmed
   module has its local `node/` + `node_modules/`, and the prj root has its Grunt tooling
   installed.
 - **Never push. Commit locally only.** The repos have **no git remotes configured** — this
@@ -32,8 +35,8 @@ workspace. This file replaces the normal Windows workspace instructions.
 - **Do not alter the firewall or its state.** The first lockdown pins the domain list
   and backend for this container. Automated refreshes stage address updates without
   flushing live rules. If a refresh fails, report the error; do not widen the allowlist,
-  delete `/run/claude-firewall` or `/run/claude-lockdown-domains`, or attempt to reopen
-  networking. Incomplete initialization requires a human to start a fresh container.
+  delete `/run/claude-firewall` or `/run/claude-lockdown-domains`, try to change the
+  pinned `/etc/hosts` block, or attempt to reopen networking. Incomplete initialization requires a human to start a fresh container.
 - **Unit tests only.** Integration tests need the PERA AS400/Oracle databases, which are
   unreachable here **by design**. Never pass `-Drun.integration.tests=true`. If something can
   only be verified against a live DB or deployed server, record it in the ticket's
@@ -71,7 +74,8 @@ separately from the immutable input snapshots.
 ## What this codebase is
 
 PERA (Colorado Public Employees' Retirement Association) website. Java 17 Maven multi-module
-(JBoss/WildFly, JSP, DWR) + Angular 21 (Material, Karma/Jasmine). Java package root is
+(JBoss/WildFly, JSP, DWR) + Angular 21 (Material; Karma/Jasmine, with Vitest in a few
+projects). Java package root is
 `org.copera.<portal>`.
 
 **Profiles — only those warmed during this sandbox's prepare phase build offline.** Check
@@ -93,12 +97,20 @@ and pair with `-DBUILD=productionIntra`, which grunt passes to `ng build` as the
 `productionIntra` configuration in each `angular.json` (outputs to `target/iagency/...`
 instead of `target/agency/...`). Agency has no `developmentIntra` config; member does.
 
-**Angular tests are Karma/ChromeHeadless in BOTH portals** (verified 2026-08-26: all 51 test
-targets in `member/angular.json` and all 17 in `agency/angular.json` use `@angular/build:karma`;
-member has zero Vitest targets). Most `karma.conf.js` files set `browsers: ['Chrome']` and
-`singleRun: false`, so **always pass `--watch=false --browsers=ChromeHeadless`** or the run hangs.
-Note also that a type error in *any* `.spec.ts` fails the whole bundle and runs **zero** specs —
-`tsconfig.spec.json` type-checks every spec, so `--include`/`--exclude` cannot route around it.
+**Angular test runners differ per project — check the builder before running tests.** Read
+`projects.<name>.architect.test.builder` in the module's `angular.json`, for example
+`node -p "require('./angular.json').projects['<name>'].architect.test.builder"`. Do not rely on
+a remembered count of which projects use which runner; it changes as projects migrate.
+
+- **`@angular/build:karma`** (most projects, both portals). Most `karma.conf.js` files set
+  `browsers: ['Chrome']` and `singleRun: false`, so **always pass
+  `--watch=false --browsers=ChromeHeadless`** or the run hangs. The result line reads
+  `TOTAL: <n> SUCCESS`. A type error in *any* `.spec.ts` fails the whole bundle and runs
+  **zero** specs — `tsconfig.spec.json` type-checks every spec, so `--include`/`--exclude`
+  cannot route around it.
+- **`@angular/build:unit-test`** (Vitest on jsdom; a few member projects). Pass
+  `--watch=false` only. Vitest's browser mode is not installed, so do **not** pass
+  `--browsers`. The result lines read `Test Files <n> passed` and `Tests <n> passed`.
 
 ## Authoritative guidance — read before acting
 
@@ -111,12 +123,10 @@ Note also that a type error in *any* `.spec.ts` fails the whole bundle and runs 
 | `prj/.agents/skills/angular-developer/` | Angular best-practice references. |
 | `Documentation/External-Team/member/README.md` | **Member-portal work starts here** (ticket prefix **JWA-**). Do NOT apply the agency conversion pipeline to member work — different portal, different playbooks. |
 
-**If your task is member-portal PSC v2 (JWA-2905):** read
-`Documentation/External-Team/member/JWA-2905-psc-legislative-updates/README.md` first — it is the
-router and carries the open-decision table. The current state of PSC v1 is already documented in
-that effort's `01-starting-context/`; do not re-derive it. Note `01-starting-context/test-baseline.md`:
-**PSC v1's test suites do not run at all**, so a green/red result there means nothing until the
-recorded compile errors are fixed.
+**Your task brief or round README names the document to start from; read it first.** Each
+effort's current state, decisions and test baseline live in its own folder under
+`Documentation/External-Team/<portal>/`. Do not re-derive them, and do not rely on this file
+for ticket-specific state: it is shared by every task and is not updated per ticket.
 
 Reference implementations: **Form** → `agency/.../service/finalsalary/` +
 `agency-root/.../features/final-salary/`; **Display** → `agency/.../service/dashboard/` +
@@ -152,12 +162,13 @@ mvn test -pl agency -o
 
 # Angular — run from the module that owns angular.json
 cd /workspace/prj/agency
-npx ng test  --project <project-name> --watch=false --browsers ChromeHeadless
+npx ng test  --project <project-name> --watch=false --browsers ChromeHeadless   # Karma builder
+npx ng test  --project <project-name> --watch=false                             # unit-test (Vitest) builder
 npx ng build --project <project-name>
 ```
 
-Node 22 and Chromium (`CHROME_BIN` set) are system-installed. Karma configs already target
-ChromeHeadless.
+Node 22 and Chromium (`CHROME_BIN` set) are system-installed; Karma still needs the
+`--browsers=ChromeHeadless` override above.
 
 ## Conventions
 
