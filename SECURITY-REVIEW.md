@@ -455,3 +455,21 @@ not retained. Afterwards the sandbox auth volume still held no token-like value,
 `pera-copilot-token` was the only podman secret. N3 is **remediated for this machine's
 sandbox**, pending the image rebuild. Other developers must follow QUICKSTART step 4-alt,
 including the FAQ migration if they ever used `/login` inside the sandbox.
+
+## Containment decisions, 2026-09-23
+
+These decisions answer the "containment requirement (N1/E6/C5)" step in the original recommended
+sequence. They were made by the scaffold owner after N3 was remediated.
+
+| Decision | Choice |
+|---|---|
+| Threat tier, supervised runs | Accident prevention plus a credential that cannot write: the current state, with N3 remediated. Accepted residuals: N1 (the hook can be evaded), E6 (DNS) and E2/E3 (Claude inner settings), because a human supervises and reviews every collection. |
+| Threat tier, unattended runs | Not permitted until E6 is closed and E2/E3 are fixed. The goal is to stop a manipulated agent sending data to arbitrary destinations. |
+| DNS (E6) | Close it: block agent DNS and have root keep a root-owned `/etc/hosts` for the pinned allowlist. This is a firewall change: it needs a written design, a discovery run of the hostnames each CLI actually uses, focused regressions and owner review before implementation. |
+| Risk sign-off (C5) | The scaffold owner, for supervised use now. Security/IT sign-off is required before other developers run unattended. |
+| Scaffold repository protection | Stays in the owner's private personal repository with no branch ruleset for now; rulesets are unavailable there. N3 means sandbox sessions cannot push to it. Revisit before wider distribution. |
+| Image rebuild for N3 | Coordinate with the ticket lead; rebuild before the next task is registered, because registrations pin the image ID. |
+
+N1 stays a defense-in-depth gap under this policy. Do not extend the hook's patterns
+to try to reach the unattended tier. The requirement is met by credential and network
+controls.
