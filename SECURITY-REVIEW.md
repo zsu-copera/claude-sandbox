@@ -364,10 +364,50 @@ The 2026-09-09 D1/D6 conclusions in the register are left as they were. Later st
   branches. The owner chose it as both canonical source and distribution point (option A).
   The repository is owned by an individual account; moving it to organization ownership
   is a separate governance choice.
-- **D6:** the `Documentation` branch `claude-sandbox` copy is retired and must not be
-  promoted to again. Until a pointer replaces it, consumers of that copy get stale scripts,
-  including the pre-E1 firewall. Replacing it needs the `Documentation` repository's owner
-  and is not yet done.
+- **D6:** the `Documentation` branch `claude-sandbox` copy, never merged to that
+  repository's `main`, is retired completely with no pointer. Its last commit
+  `b4fabe5bc` predates E1. Its two historical reports were imported unchanged into
+  `history/`. A verified private bundle of its 9 branch-only commits is retained
+  outside the repository. Deleting the branch is the `Documentation` owner's step and is not yet
+  done. Until then, anyone building from that branch gets the pre-E1 firewall.
 - **D7:** reconciling the two `.gitattributes` files is no longer needed.
 - D2/D3 (mutable inputs, no releases) are unchanged. Pushing `main` is not a reviewed
   release process.
+
+## N3: Copilot sign-in token capability, 2026-09-23
+
+| # | Severity | File | Lines | Vulnerability | Confidence |
+|---|----------|------|-------|---------------|------------|
+| N3 | 🟠 HIGH | `pera-copilot-config` volume `config.json`; `container\run-copilot.sh` | token store; CIDR allowlist | Agent-readable Copilot OAuth token carries `repo` and `gist` scopes, and GitHub is reachable | 9/10 |
+
+A read-only check was made from a disposable container, with the auth volume mounted
+read-only. It sent GET requests only and never printed the token. It found:
+
+- One stored token, a classic OAuth token (`gho_`) issued to the Copilot CLI OAuth app.
+  It is stored in plaintext in the volume's `config.json`, mode 600. Under the sessions'
+  `--userns=keep-id` mapping the file belongs to the agent user, and the CLI reads it as that user.
+- Scopes: `codespace, gist, read:org, read:user, repo`.
+- `GET /repos/.../Documentation` returned `push: true` for the signed-in user.
+- The Git receive-pack (push) handshake returned HTTP 200 for both the organization
+  `Documentation` repository and the scaffold's own repository. No push was attempted.
+
+This changes the no-push analysis. The README and entrypoint list "no Git credentials"
+as a barrier. For Copilot sessions that barrier is absent: the agent's own sign-in token
+can authenticate Git pushes and REST writes, including creating gists, to every repository
+the user can write. The allowed GitHub CIDRs make those hosts reachable. The remaining
+barriers are the deny flags, the policy hook, model behavior and human review. N1 shows
+the hook can be evaded by equivalent spellings. The scaffold repository is now the distribution
+point, so a session could in principle also alter the scaffold that future sandboxes are
+built from.
+
+Not established: whether the agent's shell tool, under Copilot's path verification,
+can actually read `~/.copilot/config.json` in a live session; whether any past session
+did so; and whether the organization's SSO or other policies restrict this token beyond
+what these responses show. Claude sessions are not affected: their allowlist excludes GitHub
+and their Anthropic credential has no repository access.
+
+Candidate mitigation, unverified here: Copilot CLI documents support for a fine-grained
+PAT with only the **Copilot Requests** account permission, supplied as
+`COPILOT_GITHUB_TOKEN`. That would replace the stored OAuth token, and the OAuth
+authorization would then be revoked. It needs a live check that Copilot works with the
+PAT under the org license, and that push and gist creation fail with it.
