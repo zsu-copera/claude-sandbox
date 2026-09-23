@@ -32,7 +32,7 @@ There were deliberately two copies; the second is now retired:
 | Copy | Role |
 |---|---|
 | `C:\work\pera\claude-sandbox` (**this one**), remote `origin` | Canonical source and distribution point (see Distribution). Kept separate from `Documentation` and `prj` so sandbox work can proceed while those are checked out for tickets. |
-| `Documentation` repo, branch `claude-sandbox`, at `External-Team/ai-resources/Sandbox-Workspace/claude-sandbox/` | **Retired**, stale, awaiting replacement by a pointer. Do not promote to it. |
+| `Documentation` repo, branch `claude-sandbox` (never merged to `main`) | **Retired completely** 2026-09-23. Scheduled for branch deletion. Do not promote to it or build from it. |
 
 The scaffold's docs name `C:\work\pera\claude-sandbox` on purpose, because that is where a
 consumer clones it. Do not change them to point at any repository path.
@@ -174,19 +174,16 @@ As of 2026-09-09 this directory is a standalone git repository with its own hist
 source and the distribution point. Consumers clone `main` to `C:\work\pera\claude-sandbox`.
 Access is by repository invitation.
 
-The old copy in `Documentation` (branch `claude-sandbox`, under
-`External-Team/ai-resources/Sandbox-Workspace/claude-sandbox/`) is **retired**. It is behind and
-must not receive further file-level promotions. Its replacement by a pointer README is a
-change to the shared `Documentation` repository. That change needs that repository's owner
-and must not be made from a ticket checkout in use. Until the pointer lands, anyone reading
-the old copy gets stale scripts.
+The old copy in `Documentation` (branch `claude-sandbox`, never merged to that repository's
+`main`) is **retired completely**, with no pointer. Its last commit `b4fabe5bc` (2026-08-05)
+predates E1. Its two historical reports were imported into `history/`. A private Git
+bundle of its 9 branch-only commits is kept in the host maintenance state. Deleting that
+branch is a write to the shared `Documentation` repository and belongs to that repository's
+owner. Until it is deleted, anyone building from it gets stale scripts.
 
 - Publish by pushing reviewed commits to `origin/main`. There is still no release
   tagging or CI gate (D2/D3, V1).
-- The old copy's selective `.gitattributes` and its file differences no longer need
-  reconciling; do not copy this folder over it.
-- No branch in `Documentation` other than `claude-sandbox` contains a file under
-  `Sandbox-Workspace/`, so the pointer commit cannot conflict with ticket work.
+- Do not copy this folder into `Documentation` again.
 
 ## Known findings
 
@@ -195,8 +192,7 @@ reconciliation plus N1/N2, and tracks E1's implementation commits, evidence and 
 deployment. Keep original findings distinct from later remediation; do not re-audit from
 scratch or mark the deployed image fixed based only on source-mounted regressions.
 `VERIFY-ASSERTIONS.md` distinguishes implemented checks from planned lifecycle coverage.
-The two prior point-in-time reports are in the shared Documentation branch alongside
-the scaffold:
+The two prior point-in-time reports are in [`history/`](history/README.md):
 `Agent_Sandbox_Findings_2026-07-28.md` and `Agent_Sandbox_Verification_2026-08-05.md`.
 
 If you are picking up a finding, the audit says which tier it is in: some are mechanical and

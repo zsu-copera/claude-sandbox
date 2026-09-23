@@ -19,7 +19,7 @@ Copilot sessions using shared GitHub IP ranges.
 | `%USERPROFILE%\.m2\settings.xml` | Normal PERA Maven setup (Nexus mirror + credentials) |
 | `%USERPROFILE%\.npmrc` | Normal PERA npm setup (Nexus registry + auth) |
 | Working copies at `C:\work\pera\{prj,Documentation}` | The sandbox clones their **committed** state |
-| This scaffold at `C:\work\pera\claude-sandbox` | Clone `main` of the scaffold's GitHub repository (access by invitation from its maintainer). The old copy under `Documentation/.../Sandbox-Workspace/` is retired and stale |
+| This scaffold at `C:\work\pera\claude-sandbox` | Clone `main` of the scaffold's GitHub repository (access by invitation from its maintainer). The old `Documentation` branch `claude-sandbox` copy is retired; do not build from it |
 | Corp network / VPN | Needed for steps 1–3 only (Nexus access); the agent itself runs locked-down |
 | Agent account | Claude subscription (step 4) **or** Copilot Enterprise license (step 4-alt) |
 
