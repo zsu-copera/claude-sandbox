@@ -56,6 +56,7 @@ STATE=/run/claude-firewall
 PENDING="$STATE/installing"
 BACKEND_FILE="$STATE/backend"
 LAYOUT_FILE="$STATE/layout"
+IPV6_FILE="$STATE/ipv6"
 
 # /run is root-owned and is not a workspace/auth mount. Never unlink the lock:
 # replacing its inode would allow two invocations to hold different locks.
@@ -67,7 +68,7 @@ RULES=$(iptables -S)
 
 has_state() {
     [ -e "$COMMITTED" ] || [ -e "$PENDING" ] \
-        || [ -e "$BACKEND_FILE" ] || [ -e "$LAYOUT_FILE" ] \
+        || [ -e "$BACKEND_FILE" ] || [ -e "$LAYOUT_FILE" ] || [ -e "$IPV6_FILE" ] \
         || grep -Eq "^-N ($MARKER|$DISPATCH)$" <<< "$RULES"
 }
 
@@ -124,6 +125,17 @@ if has_state; then
     current_layout=$(snapshot_layout)
     [ "$current_layout" = "$(< "$LAYOUT_FILE")" ] \
         || die "live firewall differs from the committed layout; use a fresh container"
+    [ -s "$IPV6_FILE" ] || die "saved IPv6 state missing; use a fresh container"
+    IPV6=$(< "$IPV6_FILE")
+    case "$IPV6" in
+        installed)
+            v6_rules=$(ip6tables -S OUTPUT)
+            grep -qx -- '-P OUTPUT DROP' <<< "$v6_rules" \
+                || die "IPv6 default-deny missing; use a fresh container"
+            ;;
+        absent) ;;
+        *) die "invalid saved IPv6 state; use a fresh container" ;;
+    esac
     if [ "$BACKEND" = per-ip ]; then
         dispatch_rules=$(iptables -S "$DISPATCH")
         if [ "$dispatch_rules" = "$(printf -- '-N %s\n-A %s -j %s' "$DISPATCH" "$DISPATCH" "$CHAIN_A")" ]; then
@@ -191,6 +203,17 @@ if [ "$INITIAL" -eq 1 ]; then
     mapfile -t RESOLVERS <<< "$sorted_resolvers"
     # Podman's own entries (localhost, container name) are kept below the pinned block.
     cp /etc/hosts "$HOSTS_BASE"
+    # Finding N4: every other rule here is IPv4. Default-deny IPv6 as well (loopback
+    # only) whenever ip6tables works. Refuse only if a non-loopback IPv6 interface exists
+    # but cannot be filtered, and never leave IPv6 open without saying so.
+    if ip6tables -S >/dev/null 2>&1; then
+        IPV6=installed
+    elif [ -r /proc/net/if_inet6 ] && awk '$6 != "lo" { found = 1 } END { exit !found }' /proc/net/if_inet6; then
+        die "IPv6 interface present but ip6tables unusable; existing firewall unchanged"
+    else
+        IPV6=absent
+        echo "[firewall] NOTE: no usable ip6tables and no non-loopback IPv6 interface; IPv6 rules not installed."
+    fi
 fi
 [ -s "$HOSTS_BASE" ] || die "saved /etc/hosts base missing; use a fresh container"
 
@@ -266,6 +289,19 @@ if [ "$INITIAL" -eq 1 ]; then
     # blocked-connection path an autonomous agent would otherwise hang on.
     iptables -A OUTPUT -p tcp -j REJECT --reject-with tcp-reset
     iptables -A OUTPUT -j REJECT --reject-with icmp-port-unreachable
+    if [ "$IPV6" = installed ]; then
+        ip6tables -P OUTPUT DROP
+        ip6tables -P INPUT DROP
+        ip6tables -P FORWARD DROP
+        ip6tables -F INPUT
+        ip6tables -F OUTPUT
+        ip6tables -F FORWARD
+        ip6tables -A INPUT -i lo -j ACCEPT
+        ip6tables -A OUTPUT -o lo -j ACCEPT
+        ip6tables -A OUTPUT -p tcp -j REJECT --reject-with tcp-reset
+        ip6tables -A OUTPUT -j REJECT --reject-with icmp6-port-unreachable
+    fi
+    printf '%s\n' "$IPV6" > "$IPV6_FILE"
     snapshot_layout > "$LAYOUT_FILE"
     mv -T "$PENDING" "$COMMITTED"
 elif [ "$BACKEND" = ipset ]; then

@@ -77,7 +77,7 @@ SCENARIOS=(normal preflight-first preflight-refresh concurrency
     stage-create stage-add activation cleanup
     term-before term-after kill-before kill-after
     state-committed state-pending state-kernel state-backend-only state-backend state-layout
-    state-missing-backend state-missing-layout state-pending-committed
+    state-missing-backend state-missing-layout state-pending-committed state-ipv6
     partial-initial smoke-positive smoke-negative smoke-initial cidr-only)
 for backend in ipset per-ip; do
     for scenario in prerequisite "${SCENARIOS[@]}"; do

@@ -138,6 +138,15 @@ locked() {
     [ "$(stat -c '%u:%g:%a' "$STATE")" = 0:0:700 ] || die "state directory owner/mode"
     [ "$(cat "$STATE/backend")" = "$MODE" ] || die "wrong real backend selected"
     [ ! -e "$STATE/installing" ] || die "installing marker not published"
+    # N4: IPv6 is default-deny with loopback only. The fixture image has usable ip6tables.
+    [ "$(cat "$STATE/ipv6")" = installed ] || die "IPv6 default-deny not installed"
+    local v6
+    v6=$(ip6tables -S)
+    for chain in INPUT OUTPUT FORWARD; do
+        grep -qx -- "-P $chain DROP" <<< "$v6" || die "IPv6 $chain policy is not DROP"
+    done
+    [ "$(grep -c '^-A ' <<< "$v6")" = 4 ] || die "unexpected IPv6 rules"
+    grep -qx -- '-A OUTPUT -o lo -j ACCEPT' <<< "$v6" || die "IPv6 loopback not allowed"
 }
 initial() {
     fw open
@@ -375,7 +384,7 @@ case "$CASE" in
                 if [[ "$CASE" == *-before ]]; then new_active; hosts_pinned "$NEW" "$OLD"; else unchanged; hosts_pinned "$OLD" "$NEW"; fi
                 stop_watch
                 ;;
-            state-committed|state-backend|state-layout|state-missing-backend|state-missing-layout|state-pending-committed)
+            state-committed|state-backend|state-layout|state-missing-backend|state-missing-layout|state-pending-committed|state-ipv6)
                 case "$CASE" in
                     state-committed) real_tables -X CLAUDE_LOCKDOWN; rm -- "$STATE/backend" "$STATE/layout" ;;
                     state-backend) printf 'invalid\n' > "$STATE/backend" ;;
@@ -383,6 +392,7 @@ case "$CASE" in
                     state-missing-backend) rm -- "$STATE/backend" ;;
                     state-missing-layout) rm -- "$STATE/layout" ;;
                     state-pending-committed) printf 'provider.test\n' > "$STATE/installing" ;;
+                    state-ipv6) ip6tables -P OUTPUT ACCEPT ;;
                 esac
                 real_tables -S > "$R/before"
                 guarded
