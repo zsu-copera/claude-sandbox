@@ -8,6 +8,10 @@ their review-time meaning. E1 has since been implemented and committed on a sepa
 branch; packaging and deployment remain outstanding. See the
 [E1 remediation record](#e1-remediation-on-a-separate-branch) for the current status.
 
+**Bookkeeping update, 2026-09-23:** the current tagged image contains the E1 firewall
+and launchers. See [E1 deployment observation](#e1-deployment-observation-2026-09-23).
+The other findings are unchanged.
+
 ## Scope and baseline
 
 Original report: [PERA Agent Sandbox Audit](https://claude.ai/code/artifact/3e434978-46fb-42c0-8292-028e9efc982b),
@@ -323,3 +327,31 @@ enforcement, exclusive provider access and S24's coverage. This does not remedia
 N1/E6, complete V1/N2 or change E2/E3/E5 policy. The next design decision remains
 the containment requirement (N1/E6/C5), followed by the coordinated Claude-policy
 and guarded-startup work.
+
+## E1 deployment observation, 2026-09-23
+
+The 2026-09-10 table above is preserved as written. It was not updated when the
+image was later rebuilt; this section records what was observed afterwards.
+
+| Item | Observed 2026-09-23 |
+|---|---|
+| Tagged `localhost/pera-sandbox` image | `893d19013d16066cacf386c442fd9d906f70792da74a046027f996ca7fed00d6`, created 2026-09-11 20:18 UTC |
+| Baked scripts and policy | SHA-256 of all seven Dockerfile-installed files equals the scaffold source: `init-firewall.sh` and both launchers as of `d714fb5`, guard/policy as of `8168164`, `prepare.sh`/Copilot defaults as of `3158ce1` |
+| Baked agent CLIs | Copilot 1.0.83; Claude Code 2.1.269 |
+| Guarded startups on this image | EEP-24 (2026-09-15) and JWA-2906 (2026-09-18) started through the guarded Copilot launcher; see `VERIFY-ASSERTIONS.md` |
+| `main` / distribution copy | `main` still `91e7b1f`; Documentation copy not promoted |
+
+The comparison ran in a disposable `--network none` container with no mounts. It
+establishes byte parity with the E1 source, so this image is **not** the pre-E1 image
+described above. `run-copilot` runs under `set -e`, so it stops before purging credentials
+or starting the agent if the initial lockdown fails. With E1, that includes complete DNS
+resolution and the positive probe. The two recorded agent sessions therefore imply that
+the initial lockdown succeeded with the E1 script. That is an inference from launcher
+behavior, not a separate observation of kernel rules in those sessions.
+
+Not established: which scaffold revision and build inputs were used for the build,
+who built it, or whether the Documentation-branch procedure was followed. The
+source-mounted E1 firewall suite has not been rerun against this image, and real
+provider refreshes, the lock's full timeout and Claude Code startup remain untested
+on it. Treat E1 as **deployed in the current image by byte parity**, not as a fresh
+runtime verification. N1, E2 to E6, V1/N2 and the distribution findings are unaffected.

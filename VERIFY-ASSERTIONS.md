@@ -717,8 +717,10 @@ controller suite by the scaffold-maintenance session. Sources are the ticket lea
 `Sandbox-Operator-Findings-2026-09-22.md` and the JWA-2905 Documentation records:
 `02-planning/sandbox-pilot-log.md` and
 `03-tasks/JWA-2906-verified-time-workflow/audits/round-01-{review-packet,consolidated-findings,erratum}.md`.
-The raw field report remains untracked and unchanged; it is not required to run
-scaffold checks. The assessment read those records and current scaffold source,
+The raw field report is kept outside the scaffold, like the 2026-09-15 report, at
+`C:\work\pera\Sandbox-Operator-Findings-2026-09-22.md`, unchanged (SHA-256
+`eeeb6d64a3f508ee88b38234bf4460c024e088280e492240ea9ee1e545a3bae3`). Its G1
+attribution is withdrawn below; it is not required to run scaffold checks. The assessment read those records and current scaffold source,
 but did not rehash the private collection/session artifacts or rerun application
 acceptance. Historical entries above remain point-in-time records.
 
