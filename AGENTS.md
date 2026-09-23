@@ -198,9 +198,10 @@ owner. Until it is deleted, anyone building from it gets stale scripts.
 
 ## Known findings
 
-Start with `SECURITY-REVIEW.md`: it links the original 27-finding audit, records the
-reconciliation plus N1/N2, and tracks E1's implementation commits, evidence and outstanding
-deployment. Keep original findings distinct from later remediation; do not re-audit from
+Start with the **Open items** section at the top of `SECURITY-REVIEW.md`: it is the current
+work list and links to the evidence. The same file keeps the original 27-finding audit
+reconciliation, N1 to N4, and the E1, N3, E6 and N4 implementation and deployment records.
+Keep original findings distinct from later remediation; do not re-audit from
 scratch or mark the deployed image fixed based only on source-mounted regressions.
 `VERIFY-ASSERTIONS.md` distinguishes implemented checks from planned lifecycle coverage.
 The two prior point-in-time reports are in [`history/`](history/README.md):

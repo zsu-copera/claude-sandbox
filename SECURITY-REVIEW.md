@@ -12,6 +12,58 @@ branch; packaging and deployment remain outstanding. See the
 and launchers. See [E1 deployment observation](#e1-deployment-observation-2026-09-23).
 The other findings are unchanged.
 
+## Open items, as of 2026-09-23
+
+This is the current work list; start here in a new session. Each item links to its evidence.
+The register and the dated sections below keep their historical meaning. **Deployed:** E1,
+N3, E6 and N4 in image `fda0c678…` (see [the deployment record](#deployment-of-n3-e6-and-n4-2026-09-23)).
+The policy governing what is required is in [Containment decisions](#containment-decisions-2026-09-23).
+
+**Blocking unattended runs** (these need a written spec and owner review; the firewall and
+settings-precedence work is not delegable without review):
+
+| Item | What is needed |
+|---|---|
+| E2/E3, Claude inner sandbox | Make mandatory policy non-writable by the agent, for example root-owned `/etc/claude-code/managed-settings.json`. Set `failIfUnavailable: true` and `allowUnsandboxedCommands: false` together. Observe the effective settings live rather than assuming precedence. Exercise tool calls inside bubblewrap with DNS closed (E6). |
+| E5, startup paths | Make guarded startup the default for explicit-shell and devcontainer paths, or refuse agent start outside the wrappers. |
+| C5, sign-off | Security/IT sign-off before other developers run unattended. Record it here. |
+
+**Blocking a second developer** (mechanical unless noted):
+
+| Item | What is needed |
+|---|---|
+| I1/I2/I3, personal defaults (S7) | Remove the named commit identity default in `prepare.sh`, the Windows-profile credential paths in `new-sandbox.sh`, and the personal harvest paths in the docs. S7 should then pass; update the expected static baseline in `AGENTS.md`. |
+| D5 / I4 | Decide which ignored assets are required per task; avoid fixed container-name collisions. |
+| Onboarding | Each developer: repository invitation, build from `main`, own fine-grained PAT (QUICKSTART step 4-alt). |
+
+**Safety and correctness:**
+
+| Item | What is needed |
+|---|---|
+| V2, reset safety | `new-sandbox.sh --force` deletes without checking unharvested refs, dirty work or destination containment. |
+| C1/C2/C3, overlay guidance | Fix stale test-runner counts and ticket-specific state in `overlay/CLAUDE.md`. Correct "pins the model" wording: the launcher seeds a default once. |
+| D4 | `New-Sandbox.ps1` is unsupported drift: remove it or label it clearly. |
+
+**Verification gaps on the current image** (first real session after the rebuild):
+- Interactive Copilot and Claude sessions under E6.
+- Maven/npm offline builds with DNS closed.
+- Claude tool calls inside its inner sandbox.
+
+The E6 discovery ran on baked Copilot 1.0.83, while the workspace-staged CLI is 1.0.86. Earlier
+records said 1.0.83 for the staged CLI, and the discrepancy is unexplained. If a CLI stops
+working, run a new names-only discovery; do not reopen DNS.
+
+**Longer term:** D2/D3 (immutable inputs, versioned releases), V1/N2 (runtime P/A/G/X checks,
+CI), and V3/V4 (partly addressed by the recorder and `sandbox-task.sh collect`; reassess).
+
+**Owner actions outside this repository:**
+- Delete the retired `Documentation` branch `claude-sandbox`; a bundle is retained privately.
+- Protect or move the scaffold repository before wider distribution.
+- Keep the untagged previous image `893d19…`: EEP-24 and JWA-2906 records pin it.
+
+**Accepted, not work items:** N1, where the hook is defense-in-depth only and should not be
+chased with more patterns, and data encoded in HTTPS to the allowlisted model providers.
+
 ## Scope and baseline
 
 Original report: [PERA Agent Sandbox Audit](https://claude.ai/code/artifact/3e434978-46fb-42c0-8292-028e9efc982b),
