@@ -426,6 +426,26 @@ Status:
   the environment variable takes precedence over the stored token. So the exposure
   can be removed before the rebuild by switching the credential and removing and
   revoking the stored token.
-- **Not yet live-verified:** Copilot working with the PAT, and the PAT's push and
-  gist refusal.
-- **Not yet done:** removing the existing stored token and revoking the OAuth authorization.
+
+**Live verification, 2026-09-23.** The owner created a fine-grained PAT (Copilot
+Requests only, public repositories, 90-day expiry) and stored it as podman secret
+`pera-copilot-token`. With that PAT, from disposable containers:
+
+| Check | Result |
+|---|---|
+| `GET /user` | 200. Fine-grained token, expiry header present, no OAuth scopes |
+| `GET` of the organization `Documentation` repository and of the scaffold repository | 404 (no access) |
+| `POST /gists` with an empty body | 403 `Resource not accessible by personal access token`; needs `gists=write`. Nothing created |
+| Git upload-pack and receive-pack handshakes, both repositories | 403 |
+| Headless Copilot 1.0.83 (`-p`), new launcher source-mounted, throwaway workspace and volume | Lockdown and self-probes passed; the model answered; exit 0. The volume stored no token |
+| New launcher against the real auth volume before cleanup | Refused, exit 78 (1 non-PAT entry) |
+
+The stored OAuth token and login fields were then removed from the real volume's
+`config.json`, keeping its header comments and mode 600. The same headless check
+against the real volume then passed, exit 0, and no token-like value remained in the
+file. The removed token was not copied or backed up. These runs were headless;
+interactive startup and a real task under the PAT are not yet exercised.
+
+- **Outstanding:** the owner must revoke the Copilot CLI OAuth authorization. Deleting
+  the local copy does not invalidate the token. Also outstanding: an image rebuild, so the baked
+  launcher enforces the guard.

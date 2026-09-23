@@ -209,6 +209,9 @@ These are source-mounted checks with a fake CLI. They do not show that the real 
 authenticates with a PAT, that a PAT's permissions are narrow, or that the image contains
 the new launcher; the baked copy changes only after an image rebuild. The live PAT check
 is recorded in [SECURITY-REVIEW N3](SECURITY-REVIEW.md#n3-copilot-sign-in-token-capability-2026-09-23).
+It covered headless Copilot 1.0.83 with the source-mounted launcher: the PAT was refused
+push, fetch, private-repository reads and gist creation, and the real auth volume
+was refused until its stored OAuth token was removed.
 
 ---
 

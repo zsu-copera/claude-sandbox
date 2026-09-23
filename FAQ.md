@@ -420,7 +420,7 @@ Remove it without printing it, inside WSL:
 
 ```bash
 podman run --rm --userns=keep-id --network none -v pera-copilot-config:/home/vscode/.copilot \
-  --entrypoint bash pera-sandbox -c 'f=$HOME/.copilot/config.json; grep -v "^[[:space:]]*//" "$f" | jq "del(.copilotTokens, .lastLoggedInUser, .loggedInUsers)" > "$f.new" && mv "$f.new" "$f"'
+  --entrypoint bash pera-sandbox -c 'f=$HOME/.copilot/config.json; { grep "^[[:space:]]*//" "$f"; grep -v "^[[:space:]]*//" "$f" | jq "del(.copilotTokens, .lastLoggedInUser, .loggedInUsers)"; } > "$f.new" && chmod 600 "$f.new" && mv "$f.new" "$f"'
 ```
 
 Deleting the local copy does not invalidate the token. Also revoke it: GitHub → Settings →
