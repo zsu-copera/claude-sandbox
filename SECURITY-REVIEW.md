@@ -26,6 +26,7 @@ settings-precedence work is not delegable without review):
 |---|---|
 | E2/E3, Claude inner sandbox | Make mandatory policy non-writable by the agent, for example root-owned `/etc/claude-code/managed-settings.json`. Set `failIfUnavailable: true` and `allowUnsandboxedCommands: false` together. Observe the effective settings live rather than assuming precedence. Exercise tool calls inside bubblewrap with DNS closed (E6). |
 | E5, startup paths | Refuse agent start outside the wrappers: `claude`/`copilot` shims that require recorded lockdown and dropped capabilities. The devcontainer is declared unsupported for agent work (decided 2026-09-23). `new-sandbox.sh` no longer prints an unguarded shell recipe ([Phase 1](#phase-1-cleanup-2026-09-23)). |
+| N5, next-session inputs | New 2026-09-23. The agent can write the staged CLIs, the project settings and the Claude config volume, and each persists into the next session. Managed settings alone do not lock `excludedCommands`, `allowWrite`, `bwrapPath` or the command-running keys. Addressed together with E2/E3/E5 in the [Phase 3 spec](design/phase3-inner-sandbox-and-startup.md) (draft, awaiting owner review). |
 | C5, sign-off | Security/IT sign-off before other developers run unattended. Record it here. |
 
 **Blocking a second developer** (mechanical unless noted):
