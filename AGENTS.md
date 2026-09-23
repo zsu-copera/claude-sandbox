@@ -48,10 +48,10 @@ procedure, `FAQ.md` for troubleshooting. Do not duplicate their content here.
 - **Runtime scripts execute inside WSL or the container.** `verify-scaffold.sh` also runs
   in Git Bash on Windows; `verify-firewall.sh` uses WSL/Podman and disposable containers.
   `New-Sandbox.ps1` is unsupported drift, not the supported assembly path.
-- **This directory is its own git repository** (standalone, default branch `main`, no remote
-  yet — see Promotion). Inspect the current branch before working; E1 is being maintained
-  on `fix/e1-firewall-transitions`, round intake on `feat/sandbox-round-imports`, and
-  outside-agent task operations on `feat/sandbox-task-operator`, separately from `main`.
+- **This directory is its own git repository** (standalone, default branch `main`, private
+  backup remote `origin` — see Promotion). Inspect the current branch before working. As of
+  2026-09-23 `main` contains the E1, round-intake, task-operator and context-handoff work;
+  their feature branches are kept for history.
   Commit as you go, in small
   reviewable steps; a change that cannot be described in
   one line is usually two changes. `git diff` is the review surface, so leave the tree clean
@@ -170,8 +170,10 @@ as complete. Registration and collection do not authorize a real task run.
 
 ## Promotion, and an open decision
 
-As of 2026-09-09 this directory is a standalone git repository with its own history. It has
-**no remote**, so nothing here is backed up off this machine yet.
+As of 2026-09-09 this directory is a standalone git repository with its own history. Since
+2026-09-23 it has a **private backup remote** (`origin`). That remote is a backup, not a
+distribution point: nobody else consumes the scaffold from it, and pushing to it does not
+promote anything.
 
 The shared copy other developers consume is still the one in `Documentation`, on branch
 `claude-sandbox` under `External-Team/ai-resources/Sandbox-Workspace/claude-sandbox/`, and it is
