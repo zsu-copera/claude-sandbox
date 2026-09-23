@@ -32,14 +32,12 @@ settings-precedence work is not delegable without review):
 
 | Item | What is needed |
 |---|---|
-| D5, required assets | Missing `prj/.github` or `prj/.agents` becomes an error by default, with an explicit override and how to regenerate them (decided 2026-09-23). |
 | Onboarding | Each developer: repository invitation, build from `main`, own fine-grained PAT (QUICKSTART step 4-alt). |
 
 **Safety and correctness:**
 
 | Item | What is needed |
 |---|---|
-| V2, reset safety | `new-sandbox.sh --force` deletes without checking unharvested refs, dirty work or destination containment. (The PowerShell half went with D4.) |
 | Next rebuild | Must carry Phase 1's `prepare.sh` and Copilot seed. Until then, prepare a newly assembled workspace only on a rebuilt image: the old `prepare.sh` restores the removed identity default. |
 
 **Verification gaps on the current image** (first real session after the rebuild):
@@ -53,6 +51,7 @@ records said 1.0.83 for the staged CLI, and the discrepancy is unexplained. If a
 working, run a new names-only discovery; do not reopen DNS.
 
 **Closed 2026-09-23 in [Phase 1](#phase-1-cleanup-2026-09-23):** I1, I2, I3, I4, C1, C2, C3, D4.
+**Closed 2026-09-23 in [Phase 2](#phase-2-reset-safety-and-required-assets-2026-09-23):** V2, D5.
 
 **Longer term:** D2/D3 (immutable inputs, versioned releases), V1/N2 (runtime P/A/G/X checks,
 CI; a static-check CI job is deferred by owner decision), and V3/V4 (partly addressed by the recorder and `sandbox-task.sh collect`; reassess).
@@ -618,3 +617,27 @@ Branch `fix/open-items-phase1`. The owner approved the plan and these decisions:
 S7 now passes: the static baseline is 22 passed, 0 failed, 2 skipped. The test evidence and
 its limits are in `VERIFY-ASSERTIONS.md` ("Personal defaults and overlay cleanup"). None of
 this is deployed in the image yet.
+
+## Phase 2: reset safety and required assets, 2026-09-23
+
+Branch `fix/open-items-phase2`, from `main` after Phase 1.
+
+| Finding | Outcome |
+|---|---|
+| V2 | Every run requires `SANDBOX_ROOT` to be strictly inside `$HOME`, not a symlink, and apart from `SOURCE_ROOT` and the scaffold. `--force` deletes only a directory with the new `.pera-sandbox-workspace` marker or the legacy sandbox layout. It then refuses when a task registration names the workspace, when `sandbox-round.sh inspect` reports a repo other than `clean` or cannot inspect it, or when HEAD, a local branch or `refs/stash` is contained in no ref of the source repo. `--discard-unharvested` lists those problems and proceeds |
+| D5 | The four git-ignored assets (`.github/copilot-instructions.md`, `.github/a11y.instructions.md`, both `SKILL.md` files) are required unless `--allow-missing-assets` is given. `prepare.sh` still only warns |
+
+Design points:
+- No host git runs against the old sandbox's repositories: their config is agent-written,
+  and `core.fsmonitor`, filters or hooks would execute on the host. Working-tree state
+  comes from `inspect` in its network-less, capability-free container. Branch tips are
+  read from ref files as data. Only the trusted source repositories are queried with host git.
+- "Harvested" means some ref of the source repository contains the commit, not merely
+  that its object exists there. The real workspace's HEAD is contained only by
+  `refs/sandbox/JWA-2906-R1` in the host `prj`, so a branches-only check would have
+  flagged integrated work.
+- **Effect on this host:** `~/pera-sandbox` is registered to EEP-24 and JWA-2906, so a
+  plain `--force` there now refuses. A new task should use a new `SANDBOX_ROOT`.
+
+Not covered: tags and other non-branch refs, and files outside `prj`/`Documentation` in the
+workspace. Evidence: `verify-assembly.sh`, 22 of 22; see `VERIFY-ASSERTIONS.md`.

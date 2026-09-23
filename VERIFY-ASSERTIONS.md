@@ -1128,6 +1128,24 @@ workspace assembled now should be prepared only on a rebuilt image. The Copilot 
 `claude-opus-5.5` follows the dotted form found in the CLI bundle and has not been
 confirmed with `/model` in a live session. Overlay text reaches new sandboxes only.
 
+### Reset safety and required assets (V2, D5), 2026-09-23
+
+New `verify-assembly.sh` (run in WSL; needs the existing image): **22 passed, 0 failed**,
+in a throwaway tree under `$HOME` with fake source repos, credential files and task state.
+It never references the real workspace. Cases: fresh assembly writes the marker. A reset of
+a clean, harvested sandbox proceeds. Refused, with the workspace kept: an unharvested HEAD,
+an unharvested side branch, a stash, a dirty worktree, a registered workspace, and podman
+unavailable. `--discard-unharvested` proceeds. Containment refuses `$HOME`, outside
+`$HOME`, inside or containing the source, and a symlink. A foreign directory is refused even
+with `--discard-unharvested` and kept. The legacy layout is accepted. Missing assets are
+refused, or warned about with `--allow-missing-assets`. Argument misuse is refused.
+
+Read-only checks on the real host: `sandbox-round.sh inspect` reports the real `prj` and
+`Documentation` as `clean`, so the git-ignored overlay does not make a real reset look
+dirty. The harvested lookup for the real HEAD took about 2 s over the WSL mount and found
+it only under `refs/sandbox/JWA-2906-R1`. `--force` was **not** run against the real
+workspace. Static assertions: 22 passed, 0 failed, 2 skipped.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is

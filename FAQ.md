@@ -54,8 +54,9 @@ resumes the previous conversation.
 
 **How do I start over with a fresh copy of the code?**
 Harvest anything you want to keep first, then `new-sandbox.sh --force` + re-run prepare.
-The image and both agent logins survive; the workspace (including un-harvested commits
-and the `.m2` cache) does not. This also picks up whatever branch your Windows working
+The image and both agent logins survive; the workspace (including its `.m2` cache) does
+not. `--force` refuses while it finds unharvested or uncommitted work, or a task
+registered to the workspace, and lists them; `--discard-unharvested` overrides that. This also picks up whatever branch your Windows working
 copies currently have checked out.
 
 **Does a fresh container automatically get the updated firewall?**
@@ -403,8 +404,11 @@ document and retain its original collection: later collection bases have already
 advanced and may not include that outstanding edit again.
 
 **I reset the sandbox and lost commits. Recoverable?**
-No — `--force` deletes the workspace including its git objects. Harvest before every
-reset. (The reflog trick doesn't help: the entire repo is gone, not just the ref.)
+No — `--force` deletes the workspace including its git objects. It now refuses when a
+branch, HEAD or stash holds commits that no ref in the source repo has, so this takes
+`--discard-unharvested`, or work it does not look for: tags and other non-branch refs,
+and files outside `prj`/`Documentation`. Harvest before every reset.
+(The reflog trick doesn't help: the entire repo is gone, not just the ref.)
 
 ## Troubleshooting
 

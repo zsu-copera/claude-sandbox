@@ -135,7 +135,9 @@ cheapest rung that actually covers your change.
    WSL for focused E1 regressions using disposable containers; never run adversarial
    firewall probes against an existing agent session.
    `bash verify-rounds.sh` covers round imports with disposable repositories; do not
-   exercise failure recovery against a real task workspace.
+   exercise failure recovery against a real task workspace. `bash verify-assembly.sh`
+   covers `new-sandbox.sh` assembly and `--force` reset safety in a throwaway tree; never
+   test `--force` against a real workspace.
 3. **Packaging / prepare.** Dockerfile or image-installed script/policy changes require
    a refreshed build context, rebuilt image and new container for deployment. An image
    rebuild does not automatically require another prepare of an existing warmed workspace;

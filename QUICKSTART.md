@@ -41,8 +41,14 @@ built-in default for either: if one cannot be found the script stops and names t
 variable to set (`WIN_M2`/`WIN_NPMRC` for the files, `SANDBOX_GIT_NAME`/`SANDBOX_GIT_EMAIL`
 for the identity), for example
 `wsl -d centos-9 -- env SANDBOX_GIT_NAME="Your Name" SANDBOX_GIT_EMAIL=you@example.org bash /mnt/c/work/pera/claude-sandbox/new-sandbox.sh`.
-**`--force` deletes the old workspace, including unharvested work and caches.** Harvest
-first. To install E1 into an existing sandbox, use the update section below instead.
+**`--force` deletes the old workspace, including its caches.** It refuses (finding V2)
+when the workspace is registered to a task, a repo has uncommitted or in-progress work,
+a container is using it, or a branch, HEAD or stash holds commits that no ref in
+`C:\work\pera\prj`/`Documentation` has. It lists what it found. Harvest or collect first,
+or use a different `SANDBOX_ROOT`. `--discard-unharvested` deletes anyway, after
+listing the problems. It also stops if the git-ignored `prj/.github` / `prj/.agents`
+assets are missing (finding D5); `--allow-missing-assets` assembles without them.
+To install an image update into an existing sandbox, use the update section below instead.
 
 ### 2. Build the image — inside WSL (`wsl -d centos-9`)
 
@@ -428,8 +434,9 @@ wsl -d centos-9 -- bash /mnt/c/work/pera/claude-sandbox/new-sandbox.sh --force
 
 Then re-run step 3 (prepare). The image and both agent logins (Claude + Copilot volumes)
 survive. If the reset copied updated image-installed scaffold files, rebuild at step 2
-before preparing or running. Any unharvested commits or uncommitted work are lost on
-reset — review first.
+before preparing or running. The reset refuses while work would be lost or the workspace
+is registered to a task (see step 1). A task's workspace stays until the task is done;
+start a new task in a new `SANDBOX_ROOT` rather than forcing past a registration.
 
 ## Things to know
 

@@ -127,8 +127,11 @@ stages the corp CAs, and copies `~\.m2\settings.xml` + `~\.npmrc` into `.secrets
 (purged before the agent runs). The Windows profile is resolved through WSL interop and
 the commit identity comes from WSL git config, written per-repo; neither has a built-in
 default (findings I1/I2, see [QUICKSTART step 1](QUICKSTART.md#1-assemble-the-sandbox--from-windows-powershell)
-for the overrides). `--force` deletes and recreates the workspace, including
-unharvested commits, uncommitted work and caches. Harvest first; do not use it merely to
+for the overrides). `--force` deletes and recreates the workspace and its caches. It only
+deletes a directory inside `$HOME` that it assembled, and refuses while work would be lost
+or a task is registered to it, unless given `--discard-unharvested` (finding V2; details
+in [QUICKSTART step 1](QUICKSTART.md#1-assemble-the-sandbox--from-windows-powershell)).
+Harvest first; do not use it merely to
 update the firewall image.
 
 ### 2. Build the image (when the Dockerfile or image-installed files change)
@@ -403,6 +406,7 @@ separate decisions.
 | `SECURITY-REVIEW.md` | Original audit reconciliation, E1 commit/evidence record and deployment status |
 | `VERIFY-ASSERTIONS.md` | Implemented checks, planned lifecycle assertions and coverage limits |
 | `sandbox-round.sh`, `tools/rounds/rounds.js` | Operator-only export/preview/apply/recover for append-only committed brief snapshots |
+| `verify-assembly.sh` | Disposable `new-sandbox.sh` assembly and reset-safety regressions (V2, D5, I1), in a throwaway tree under `$HOME` |
 | `verify-rounds.sh`, `tests/rounds/` | Disposable round-import and recovery regressions |
 | `sandbox-task.sh`, `tools/tasks/` | Registered task plans, checked launch-handoff text, status and audit collection; no automatic agent launch |
 | `OPERATOR.md` | Outside-agent procedure, approval rules and audit boundaries |
