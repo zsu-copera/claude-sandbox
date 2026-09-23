@@ -48,15 +48,12 @@ NODE_CACHE="$WS/.node-cache"
 [ -f "$WS/prj/.github/copilot-instructions.md" ] || echo "WARN: prj/.github overlay missing" >&2
 [ -d "$WS/prj/.agents/skills/agency-jsp-to-angular" ] || echo "WARN: agency-jsp-to-angular skill missing" >&2
 
-echo "==> Opening firewall for the prepare phase"
-sudo /usr/local/bin/init-firewall.sh open
-
 git config --global --add safe.directory '*' 2>/dev/null || true
 
 # --- Commit identity ------------------------------------------------------------
 # Without one, git refuses to commit and the agent invents its own: JWA-2905 round 01
 # landed as "PERA Sandbox Agent <agent@sandbox.local>", which maps to no Bitbucket
-# account and breaks blame/PR attribution.
+# account and breaks blame/PR attribution. The round importer refuses a repo without one.
 #
 # Set it PER-REPO, not --global. run-agent runs in a SEPARATE container and only
 # /workspace and the config volumes persist (same reason the CLIs are staged on the
@@ -65,17 +62,30 @@ git config --global --add safe.directory '*' 2>/dev/null || true
 #
 # The human who audits and pushes the work is the author; if an agent wants to record
 # itself, it does that with a Co-authored-by trailer naming whichever agent actually ran.
+# new-sandbox.sh writes that human's identity when it assembles the workspace;
+# SANDBOX_GIT_NAME / SANDBOX_GIT_EMAIL override it here. There is deliberately no
+# default (finding I1): a guessed identity attributes the work to the wrong person.
+# Checked before the firewall opens, so a missing identity costs nothing.
 #
 # core.autocrlf=input stops a Linux agent ever writing CRLF into repos whose Windows
 # checkouts use autocrlf=true.
-echo "==> Setting commit identity (${SANDBOX_GIT_NAME:-Zhan} <${SANDBOX_GIT_EMAIL:-zsu@copera.org}>)"
+echo "==> Checking commit identity"
 for _repo in "$WS/prj" "$WS/Documentation"; do
   [ -d "$_repo/.git" ] || continue
-  git -C "$_repo" config user.name     "${SANDBOX_GIT_NAME:-Zhan}"
-  git -C "$_repo" config user.email    "${SANDBOX_GIT_EMAIL:-zsu@copera.org}"
+  [ -n "${SANDBOX_GIT_NAME:-}" ]  && git -C "$_repo" config user.name  "$SANDBOX_GIT_NAME"
+  [ -n "${SANDBOX_GIT_EMAIL:-}" ] && git -C "$_repo" config user.email "$SANDBOX_GIT_EMAIL"
+  if ! _name=$(git -C "$_repo" config --local user.name) || ! _email=$(git -C "$_repo" config --local user.email); then
+    echo "ERROR: $_repo has no per-repo commit identity. Re-run new-sandbox.sh, or pass" >&2
+    echo "       -e SANDBOX_GIT_NAME=\"...\" -e SANDBOX_GIT_EMAIL=\"...\" before the image name." >&2
+    exit 1
+  fi
+  echo "    ${_repo#"$WS"/}: $_name <$_email>"
   git -C "$_repo" config core.autocrlf input
 done
-unset _repo
+unset _repo _name _email
+
+echo "==> Opening firewall for the prepare phase"
+sudo /usr/local/bin/init-firewall.sh open
 
 echo "==> Staging npm credentials (~/.npmrc, purged by run-agent)"
 cp "$NPMRC_SRC" "$HOME/.npmrc"

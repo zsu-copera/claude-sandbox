@@ -10,8 +10,6 @@ set -euo pipefail
 SOURCE_ROOT="${SOURCE_ROOT:-/mnt/c/work/pera}"
 SANDBOX_ROOT="${SANDBOX_ROOT:-$HOME/pera-sandbox}"
 SCAFFOLD="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-WIN_M2="${WIN_M2:-/mnt/c/Users/su/.m2/settings.xml}"
-WIN_NPMRC="${WIN_NPMRC:-/mnt/c/Users/su/.npmrc}"
 FORCE=0
 [ "${1:-}" = "--force" ] || [ "${1:-}" = "-f" ] && FORCE=1
 
@@ -19,6 +17,45 @@ FORCE=0
 for p in "$SOURCE_ROOT/prj/.git" "$SOURCE_ROOT/Documentation/.git"; do
     [ -e "$p" ] || { echo "ERROR: expected git repo not found: $p" >&2; exit 1; }
 done
+
+# Nexus credentials live in the Windows profile of whoever runs this (finding I2). Ask
+# Windows for it through WSL interop; the Linux $USER need not match the Windows account.
+# From /mnt/c because cmd.exe refuses a UNC (\\wsl$) working directory.
+win_profile() {
+    local p
+    p=$(cd /mnt/c && cmd.exe /d /c 'echo %USERPROFILE%' 2>/dev/null | tr -d '\r') || return 1
+    [ -n "$p" ] && [ "$p" != "%USERPROFILE%" ] || return 1
+    wslpath -u "$p"
+}
+if [ -z "${WIN_M2:-}" ] || [ -z "${WIN_NPMRC:-}" ]; then
+    WIN_HOME=$(win_profile) || {
+        echo "ERROR: could not resolve %USERPROFILE% through WSL interop." >&2
+        echo "       Set WIN_M2 and WIN_NPMRC to your settings.xml and .npmrc (as /mnt/c/... paths)." >&2
+        exit 1
+    }
+    WIN_M2="${WIN_M2:-$WIN_HOME/.m2/settings.xml}"
+    WIN_NPMRC="${WIN_NPMRC:-$WIN_HOME/.npmrc}"
+fi
+
+# Commit identity (finding I1): the developer who runs this audits and pushes the
+# sandbox's work, so the sandbox commits as them. WSL's git config for the source repo
+# (repo-local, then WSL global) is the default source. There is deliberately no fallback
+# name: a guessed identity attributes the work to the wrong person. Validated the way
+# the round importer validates it, so a bad value fails here rather than at import.
+GIT_NAME="${SANDBOX_GIT_NAME:-$(git -C "$SOURCE_ROOT/prj" config user.name 2>/dev/null || true)}"
+GIT_EMAIL="${SANDBOX_GIT_EMAIL:-$(git -C "$SOURCE_ROOT/prj" config user.email 2>/dev/null || true)}"
+if [ -z "$GIT_NAME" ] || [ -z "$GIT_EMAIL" ]; then
+    echo "ERROR: no commit identity for the sandbox repos. Either set SANDBOX_GIT_NAME and" >&2
+    echo "       SANDBOX_GIT_EMAIL, or configure git inside this WSL distro:" >&2
+    echo "       git config --global user.name \"Your Name\"; git config --global user.email you@example.org" >&2
+    exit 1
+fi
+_bad_ident='[[:cntrl:]<>]'
+if [[ "$GIT_NAME$GIT_EMAIL" =~ $_bad_ident ]]; then
+    echo "ERROR: commit identity contains a control character or angle bracket" >&2
+    exit 1
+fi
+
 [ -f "$WIN_M2" ] || { echo "ERROR: $WIN_M2 missing (Nexus mirror + creds needed for prepare phase)" >&2; exit 1; }
 [ -f "$WIN_NPMRC" ] || { echo "ERROR: $WIN_NPMRC missing (Nexus npm registry + auth needed for prepare phase)" >&2; exit 1; }
 [ -d "$SOURCE_ROOT/prj/.github" ] || echo "WARN: prj/.github not found — instruction files will be missing in the sandbox" >&2
@@ -50,6 +87,13 @@ git clone --no-hardlinks --single-branch -c core.autocrlf=false -c core.eol=lf "
 # Harvest never needs them: you fetch FROM the real repo, pointing AT the sandbox path.
 git -C "$SANDBOX_ROOT/prj" remote remove origin
 git -C "$SANDBOX_ROOT/Documentation" remote remove origin
+
+# Per-repo, because only /workspace persists between the prepare and agent containers.
+echo "==> Commit identity: $GIT_NAME <$GIT_EMAIL>"
+for r in prj Documentation; do
+    git -C "$SANDBOX_ROOT/$r" config user.name  "$GIT_NAME"
+    git -C "$SANDBOX_ROOT/$r" config user.email "$GIT_EMAIL"
+done
 
 # --- 2. Overlay the git-ignored AI assets -------------------------------------
 if [ -d "$SOURCE_ROOT/prj/.github" ]; then
