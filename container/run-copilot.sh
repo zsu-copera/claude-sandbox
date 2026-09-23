@@ -1,20 +1,49 @@
 #!/bin/bash
 # Start the autonomous GitHub Copilot CLI session, locked down.
 #
-#   run-copilot --login            # ONE-TIME: wider firewall (adds github.com) for the
-#                                  #   device-flow login; authenticate, then exit.
-#   run-copilot                    # normal autonomous session (github.com NOT allowed —
-#                                  #   git push to GitHub is network-impossible)
+#   run-copilot                    # normal autonomous session
 #   run-copilot -p "task…"         # headless; extra args pass through to copilot
 #
-# Two-phase firewall rationale: Documentation is hosted ON github.com (prj may migrate),
-# so steady-state sessions exclude github.com entirely; only the Copilot API transport
-# hosts stay open. See README "GitHub Copilot CLI variant".
+# Requires COPILOT_GITHUB_TOKEN = a fine-grained PAT limited to the "Copilot Requests"
+# account permission, e.g. podman --secret NAME,type=env,target=COPILOT_GITHUB_TOKEN.
+# See README "GitHub Copilot CLI variant".
 set -euo pipefail
 
 WS=/workspace
 COPILOT_DIR="$HOME/.copilot"
 SEEDS=/usr/local/share/copilot-defaults
+
+# Finding N3: the agent can read whatever credential Copilot uses, and GitHub is
+# reachable (see HONEST LIMITATION below), so that credential must not be able to write
+# to GitHub. The OAuth sign-in (/login, the retired --login mode) stores a gho_ token
+# with the repo and gist scopes: it can push to every repository the user can write and
+# create gists, whatever the deny rules or policy hook match. Only a fine-grained PAT
+# supplied through the environment is accepted, and a token-like value left in the auth
+# volume refuses the launch. The launcher cannot see a PAT's permissions; creating it
+# with Copilot Requests only is the operator's step. Checks run before any network use.
+refuse_n3() {
+    echo "==> REFUSED (finding N3): $1" >&2
+    echo "    See QUICKSTART step 4-alt for the Copilot-Requests-only fine-grained PAT setup." >&2
+    exit 78
+}
+[ "${1:-}" != "--login" ] \
+    || refuse_n3 "--login is retired: it stores an OAuth token with the repo and gist scopes."
+case "${COPILOT_GITHUB_TOKEN:-}" in
+    github_pat_?*) ;;
+    "") refuse_n3 "COPILOT_GITHUB_TOKEN is not set." ;;
+    *) refuse_n3 "COPILOT_GITHUB_TOKEN is not a fine-grained PAT (github_pat_...)." ;;
+esac
+unset GH_TOKEN GITHUB_TOKEN
+if [ -e "$COPILOT_DIR/config.json" ]; then
+    # config.json starts with // comment lines, so strip them before parsing. Fail closed:
+    # an unparseable file, or any stored token other than a PAT, refuses the launch.
+    STORED=$(grep -v '^[[:space:]]*//' "$COPILOT_DIR/config.json" \
+        | jq -r '[(.copilotTokens // {})[] | select(type != "string" or (startswith("github_pat_") | not))] | length' \
+        2>/dev/null) || STORED=unparseable
+    if [ "$STORED" != 0 ] || grep -Eq 'gh[opsu]_[A-Za-z0-9]{20,}' "$COPILOT_DIR/config.json"; then
+        refuse_n3 "the auth volume's config.json holds a stored sign-in token ($STORED non-PAT entries). Remove it and revoke the OAuth authorization."
+    fi
+fi
 
 # Copilot Enterprise endpoints. Telemetry hosts intentionally excluded (fail-fast
 # REJECT is fine). The GitHub-hosted names (github.com, api.github.com,
@@ -26,11 +55,11 @@ SEEDS=/usr/local/share/copilot-defaults
 #
 # HONEST LIMITATION: github.com and api.githubcopilot.com are served from the
 # SAME address pool, so IP-level filtering cannot separate them — github.com is
-# technically connectable in every session, and --login differs only in intent,
-# not network reach. The no-push barrier is therefore: deny-tool rules + no git
-# credentials (the agent has none; git push to GitHub 401s) + no remotes +
-# disabled github-mcp-server + human review. True hostname-level filtering
-# would need an SNI-aware proxy (possible hardening step, README §4b).
+# technically connectable in every session. The no-push barrier is therefore the
+# credential: the only GitHub token present is the Copilot-Requests-only PAT checked
+# above, which cannot push or write through the REST API. The deny-tool rules, policy
+# hook, disabled github-mcp-server, absent remotes and human review are defense-in-depth.
+# True hostname-level filtering would need an SNI-aware proxy (README §4b).
 #
 # Ranges are fetched from the authoritative api.github.com/meta at startup
 # (the fresh container's network is open until the first lockdown); the static
@@ -53,11 +82,6 @@ MODE_DOMAINS=(
     origin-tracker.githubusercontent.com
     $GITHUB_CIDRS
 )
-if [ "${1:-}" = "--login" ]; then
-    shift
-    MODE_DOMAINS+=(github.com)
-    echo "==> LOGIN MODE: authenticate with /login, confirm /workspace as trusted, then exit."
-fi
 
 echo "==> Locking down egress (GitHub Copilot endpoints only)"
 sudo /usr/local/bin/init-firewall.sh lockdown "${MODE_DOMAINS[@]}"
@@ -97,7 +121,7 @@ echo "==> Starting Copilot CLI $(copilot --version 2>/dev/null || echo '(version
 # GitHub write paths must be blocked at the tool layer because api.github.com stays
 # open for Copilot's own auth (syntax verified against copilot --help, v1.0.69):
 #   --disable-builtin-mcps      kills the built-in github-mcp-server (PR/issue/gist
-#                               tools that would use the OAuth token, bypassing shell)
+#                               tools that would use the session's token, bypassing shell)
 #   --deny-tool 'shell(x y)'    hierarchical command identifiers; :* wildcards args
 #   --deny-url                  blocks the fetch tool from GitHub hosts (CLI's own
 #                               API traffic is not a tool call and is unaffected)

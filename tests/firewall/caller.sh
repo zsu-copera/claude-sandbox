@@ -23,9 +23,38 @@ printf 'synthetic fixture\n' > "$HOME/.m2/settings.xml"
 printf 'synthetic fixture\n' > "$HOME/.npmrc"
 printf '{}\n' > "$HOME/.copilot/settings.json"
 
+# Finding N3 fixtures. Synthetic values only; none is a real credential.
+fake_pat=github_pat_n3_synthetic_fixture
+fake_oauth=gho_n3SyntheticFixtureNotARealToken0000
+config_with() {
+    printf '// User settings belong in settings.json.\n// This file is managed automatically.\n'
+    printf '{"copilotTokens": {"https://github.com:fixture": "%s"}, "trustedFolders": ["/workspace"]}\n' "$1"
+}
+launch_args=(--e1-argument 'value with spaces')
+if [ "$CLI" = copilot ]; then
+    export COPILOT_GITHUB_TOKEN=$fake_pat GH_TOKEN=$fake_oauth GITHUB_TOKEN=$fake_oauth
+    config_with "$fake_pat" > "$HOME/.copilot/config.json"
+fi
+case "$SCENARIO" in
+    n3-login) launch_args=(--login) ;;
+    n3-no-token) unset COPILOT_GITHUB_TOKEN ;;
+    n3-oauth-env) COPILOT_GITHUB_TOKEN=$fake_oauth ;;
+    n3-stored-oauth) config_with "$fake_oauth" > "$HOME/.copilot/config.json" ;;
+    n3-unparseable) printf '{"copilotTokens": \n' > "$HOME/.copilot/config.json" ;;
+esac
+
 status=0
-bash "$R/launcher.sh" --e1-argument 'value with spaces' > "$R/launcher.log" 2>&1 || status=$?
-if [ "$SCENARIO" = initial-failure ]; then
+bash "$R/launcher.sh" "${launch_args[@]}" > "$R/launcher.log" 2>&1 || status=$?
+if [[ $SCENARIO == n3-* ]]; then
+    [ "$status" -eq 78 ] || die "N3 refusal did not exit 78: $status"
+    grep -Fq 'REFUSED (finding N3)' "$R/launcher.log" || die "N3 refusal message missing"
+    ! grep -Fq -e "$fake_oauth" -e "$fake_pat" "$R/launcher.log" || die "launcher printed a token"
+    [ ! -e "$R/curl-called" ] || die "network used before N3 refusal"
+    [ ! -e "$R/sudo-count" ] || die "firewall called before N3 refusal"
+    [ ! -e "$R/cli-called" ] || die "CLI ran despite N3 refusal"
+    [ -f /workspace/.secrets/e1-fixture ] && [ -f "$HOME/.m2/settings.xml" ] && [ -f "$HOME/.npmrc" ] \
+        || die "credentials purged before N3 refusal"
+elif [ "$SCENARIO" = initial-failure ]; then
     [ "$status" -eq 73 ] || die "initial firewall failure did not propagate: $status"
     [ ! -e "$R/cli-called" ] || die "CLI ran despite initial firewall failure"
     [ ! -e "$R/sleep-count" ] || die "refresh loop started despite initial firewall failure"

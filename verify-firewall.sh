@@ -111,8 +111,12 @@ fi
 if [ "$SUITE" != "sudo" ]; then
 for caller in claude copilot; do
     source="$ROOT/container/run-agent.sh"
-    [ "$caller" != copilot ] || source="$ROOT/container/run-copilot.sh"
-    for scenario in initial-failure refresh-warning; do
+    scenarios=(initial-failure refresh-warning)
+    if [ "$caller" = copilot ]; then
+        source="$ROOT/container/run-copilot.sh"
+        scenarios+=(n3-login n3-no-token n3-oauth-env n3-stored-oauth n3-unparseable)
+    fi
+    for scenario in "${scenarios[@]}"; do
         ACTIVE="$NAME-$caller-$scenario"
         output=$(timeout --signal=TERM --kill-after=5 30 podman run --interactive --rm --name "$ACTIVE" \
             "${COMMON[@]}" --network none --tmpfs /workspace:rw,mode=0700 \

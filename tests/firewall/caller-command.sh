@@ -39,6 +39,7 @@ case "$name" in
         fi
         ;;
     curl)
+        : > "$R/curl-called"
         [ "${!#}" = https://api.github.com/meta ] || { echo "unexpected caller curl URL" >&2; exit 64; }
         printf '{"web":["192.0.2.0/24"],"api":["198.51.100.0/24"]}\n'
         ;;
@@ -47,6 +48,12 @@ case "$name" in
         if [ "${1:-}" = --version ]; then echo "E1 fake CLI"; exit 0; fi
         [ ! -e /workspace/.secrets ] && [ ! -e "$HOME/.m2/settings.xml" ] && [ ! -e "$HOME/.npmrc" ] \
             || { echo "fake CLI saw unpurged synthetic credentials" >&2; exit 76; }
+        if [ "$name" = copilot ]; then
+            [ -z "${GH_TOKEN+x}" ] && [ -z "${GITHUB_TOKEN+x}" ] \
+                || { echo "fake CLI saw GH_TOKEN/GITHUB_TOKEN" >&2; exit 77; }
+            [ "${COPILOT_GITHUB_TOKEN:-}" = github_pat_n3_synthetic_fixture ] \
+                || { echo "fake CLI did not receive the PAT" >&2; exit 77; }
+        fi
         printf '%s\0' "$@" > "$R/cli-arguments"
         : > "$R/cli-started"
         for ((i=0; i<600; i++)); do
