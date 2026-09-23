@@ -148,6 +148,7 @@ fi
 # Resolve before touching live rules. A partial DNS result must not replace a
 # working snapshot. CIDRs are needed for Copilot's shared GitHub address ranges.
 ALLOWED_IPS=()
+PINNED_HOSTS=()
 SMOKE_HOST=""
 for d in "${DOMAINS[@]}"; do
     if [[ "$d" == */* ]]; then
@@ -163,6 +164,7 @@ for d in "${DOMAINS[@]}"; do
         if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             valid_ipv4 "$ip" || die "invalid DNS address for $d"
             ALLOWED_IPS+=("$ip")
+            PINNED_HOSTS+=("$ip ${d%.}")
             found=1
         fi
     done <<< "$answer"
@@ -171,6 +173,26 @@ done
 [ ${#ALLOWED_IPS[@]} -gt 0 ] || die "resolved no allowlist IPs; existing firewall unchanged"
 sorted_ips=$(printf '%s\n' "${ALLOWED_IPS[@]}" | sort -u)
 mapfile -t ALLOWED_IPS <<< "$sorted_ips"
+
+# Finding E6: after lockdown only root (this helper and its refresh loop) may use DNS,
+# and only to the container's configured IPv4 resolvers. The agent resolves allowlisted
+# names from the root-owned /etc/hosts written below. The pinned domain list means the
+# agent's scoped sudo cannot make root resolve names of its choosing.
+HOSTS_BASE="$STATE/hosts-base"
+if [ "$INITIAL" -eq 1 ]; then
+    RESOLVERS=()
+    while read -r keyword ns _; do
+        if [ "$keyword" = nameserver ] && [[ "$ns" != */* ]] && valid_ipv4 "$ns"; then
+            RESOLVERS+=("$ns")
+        fi
+    done < /etc/resolv.conf
+    [ ${#RESOLVERS[@]} -gt 0 ] || die "no IPv4 nameserver in /etc/resolv.conf; existing firewall unchanged"
+    sorted_resolvers=$(printf '%s\n' "${RESOLVERS[@]}" | sort -u)
+    mapfile -t RESOLVERS <<< "$sorted_resolvers"
+    # Podman's own entries (localhost, container name) are kept below the pinned block.
+    cp /etc/hosts "$HOSTS_BASE"
+fi
+[ -s "$HOSTS_BASE" ] || die "saved /etc/hosts base missing; use a fresh container"
 
 if [ "$INITIAL" -eq 1 ]; then
     # Choose once. A later ipset failure must not trigger a live backend migration.
@@ -219,12 +241,18 @@ if [ "$INITIAL" -eq 1 ]; then
     iptables -F OUTPUT
     iptables -F FORWARD
 
+    # E6: non-root DNS is refused before any ACCEPT, including loopback, so a local
+    # resolver cannot be used either. REJECT keeps failed lookups fast.
+    iptables -A OUTPUT -p udp --dport 53 -m owner ! --uid-owner 0 -j REJECT --reject-with icmp-port-unreachable
+    iptables -A OUTPUT -p tcp --dport 53 -m owner ! --uid-owner 0 -j REJECT --reject-with tcp-reset
     iptables -A INPUT -i lo -j ACCEPT
     iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
     iptables -A OUTPUT -o lo -j ACCEPT
     iptables -A OUTPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
-    iptables -A OUTPUT -p udp --dport 53 -j ACCEPT
-    iptables -A OUTPUT -p tcp --dport 53 -j ACCEPT
+    for ns in "${RESOLVERS[@]}"; do
+        iptables -A OUTPUT -p udp --dport 53 -d "$ns" -m owner --uid-owner 0 -j ACCEPT
+        iptables -A OUTPUT -p tcp --dport 53 -d "$ns" -m owner --uid-owner 0 -j ACCEPT
+    done
     iptables -N "$DISPATCH"
     if [ "$BACKEND" = ipset ]; then
         ipset create "$IPSET" hash:net -exist
@@ -248,6 +276,18 @@ else
     iptables -R "$DISPATCH" 1 -j "$NEXT"
 fi
 
+# E6: publish the agent's name view for the rules now active, before cleanup, so a
+# cleanup failure cannot leave names pointing at a superseded allowlist. /etc/hosts is
+# a bind mount and cannot be renamed over; it is rewritten in place with one small
+# write. A failure here is reported after activation and keeps the new restrictions.
+hosts_content=$(
+    cat "$HOSTS_BASE"
+    printf '\n# BEGIN init-firewall pinned allowlist (finding E6); rewritten on every lockdown and refresh\n'
+    if [ ${#PINNED_HOSTS[@]} -gt 0 ]; then printf '%s\n' "${PINNED_HOSTS[@]}" | sort -u; fi
+    printf '# END init-firewall pinned allowlist\n'
+)
+printf '%s\n' "$hosts_content" > /etc/hosts || die "could not write pinned /etc/hosts; restrictions retained"
+
 # Cleanup never rolls back a committed update. If it fails, the new allowlist is
 # active; its unused predecessor will be cleared when the next candidate is staged.
 if [ "$BACKEND" = ipset ]; then
@@ -257,6 +297,7 @@ elif [ "$INITIAL" -eq 0 ]; then
 fi
 
 echo "[firewall] LOCKDOWN active ($BACKEND). Allowed: ${DOMAINS[*]}"
+
 
 # Any HTTP response counts as reachable. Both probe failures stop initial agent
 # startup; a refresh error is surfaced by the launcher without opening the network.
@@ -271,4 +312,19 @@ if curl -s -m 5 -o /dev/null https://example.com; then
     die "example.com reachable — lockdown NOT effective"
 else
     echo "[firewall] OK: non-allowlisted egress refused"
+fi
+if [ -n "$SMOKE_HOST" ]; then
+    getent -s files hosts "$SMOKE_HOST" >/dev/null || die "$SMOKE_HOST missing from pinned /etc/hosts"
+fi
+# The negative DNS probe needs a non-root identity. Without CAP_SETUID it is skipped
+# and says so, rather than reporting a pass it did not observe.
+if setpriv --reuid 65534 --regid 65534 --clear-groups true 2>/dev/null; then
+    if setpriv --reuid 65534 --regid 65534 --clear-groups \
+        dig +time=2 +tries=1 +short A "${SMOKE_HOST:-example.com}" 2>/dev/null \
+        | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+        die "non-root DNS answered — DNS restriction NOT effective"
+    fi
+    echo "[firewall] OK: non-root DNS refused"
+else
+    echo "[firewall] NOTE: cannot switch to a non-root identity; non-root DNS probe skipped"
 fi

@@ -39,6 +39,10 @@ fi
 
 trap 'status=$?; echo "scenario $MODE/$CASE failed (status $status)" >&2; for file in "$R/fw.log" "$R/worker.log" "$R/trace"; do if [ -f "$file" ]; then echo "--- ${file##*/}" >&2; tail -n 35 "$file" >&2; fi; done; exit "$status"' ERR
 no_external_route
+# E6: a deterministic resolver entry. dig is shimmed, so nothing is sent to it; the
+# lockdown only turns it into the root-only DNS ACCEPT rules asserted below.
+RESOLVER="$SUBNET.1"
+printf 'nameserver %s\nnameserver 2001:db8::53\n' "$RESOLVER" > /etc/resolv.conf
 mkdir -m 700 "$R/bin" "$R/real"
 for command in iptables ipset dig curl; do
     path=$(command -v "$command") || die "missing existing image command: $command"
@@ -100,6 +104,31 @@ guarded() {
     expect_status 3 fw open
     expect_failure fw lockdown provider.test
 }
+# E6: the agent's name view is the root-owned pinned block, rewritten on each
+# successful refresh, with podman's own entries preserved and no duplicated block.
+hosts_pinned() {
+    local expected=$1 absent=${2:-}
+    [ "$(stat -c '%u:%g:%a' /etc/hosts)" = 0:0:644 ] || die "/etc/hosts owner/mode"
+    [ "$(grep -c '^# BEGIN init-firewall pinned allowlist' /etc/hosts)" = 1 ] || die "pinned block missing or duplicated"
+    grep -qx "$expected provider.test" /etc/hosts || die "provider.test not pinned to $expected"
+    grep -qx "$expected secondary.test" /etc/hosts || die "secondary.test not pinned to $expected"
+    if [ -n "$absent" ] && grep -q "^$absent " /etc/hosts; then die "superseded address $absent still pinned"; fi
+    grep -qw localhost /etc/hosts || die "podman base entries lost"
+    if grep -q 'evil.test' /etc/hosts; then die "unpinned name reached /etc/hosts"; fi
+}
+# E6: non-root DNS is refused before any ACCEPT; root DNS only to the IPv4 resolver.
+dns_rules() {
+    local rules
+    rules=$(real_tables -S OUTPUT)
+    [ "$(sed -n 1,2p <<< "$(grep '^-A OUTPUT' <<< "$rules")")" = "$(printf '%s\n%s' \
+        '-A OUTPUT -p udp -m udp --dport 53 -m owner ! --uid-owner 0 -j REJECT --reject-with icmp-port-unreachable' \
+        '-A OUTPUT -p tcp -m tcp --dport 53 -m owner ! --uid-owner 0 -j REJECT --reject-with tcp-reset')" ] \
+        || die "non-root DNS REJECT rules are not first"
+    [ "$(grep -c -- '--dport 53 -m owner --uid-owner 0 -j ACCEPT' <<< "$rules")" = 2 ] || die "unexpected root DNS rules"
+    grep -q -- "-d $RESOLVER/32 -p udp -m udp --dport 53 -m owner --uid-owner 0 -j ACCEPT" <<< "$rules" \
+        || die "root DNS not limited to the configured resolver"
+    if grep -Eq -- '--dport 53 -j ACCEPT$' <<< "$rules"; then die "unrestricted DNS ACCEPT present"; fi
+}
 locked() {
     for chain in INPUT OUTPUT FORWARD; do
         real_tables -S | grep -qx -- "-P $chain DROP" || die "$chain policy is not DROP"
@@ -114,6 +143,7 @@ initial() {
     fw open
     probe "$FORBIDDEN" allow
     fw lockdown provider.test secondary.test
+    grep -q 'NOTE: cannot switch to a non-root identity' "$R/fw.log" || die "skipped DNS probe not reported"
     locked
     expect_status 3 fw open
     printf 'provider.test\nsecondary.test\n' > "$R/expected-domains"
@@ -123,6 +153,8 @@ initial() {
     probe "$OLD" allow
     probe "$FORBIDDEN" deny
     probe 127.0.0.1 allow 8080
+    hosts_pinned "$OLD"
+    dns_rules
 }
 unchanged() {
     skeleton > "$R/observed"
@@ -251,6 +283,7 @@ case "$CASE" in
                 done
                 stop_watch
                 new_active
+                hosts_pinned "$NEW" "$OLD"
                 ;;
             preflight-refresh)
                 : > "$R/secondary"
@@ -262,6 +295,7 @@ case "$CASE" in
                 : > "$R/dig-fail"
                 expect_failure fw lockdown provider.test secondary.test
                 unchanged
+                hosts_pinned "$OLD"
                 ;;
             stage-create|stage-add|activation|cleanup)
                 new_answers
@@ -274,9 +308,16 @@ case "$CASE" in
                 expect_failure fw lockdown provider.test secondary.test
                 [ ! -e "$R/armed" ] || die "failure injection was not reached"
                 grep -q 'injected .* failure' "$R/fw.log" || die "injected error was not surfaced"
-                if [ "$CASE" = cleanup ]; then new_active; else unchanged; fi
+                if [ "$CASE" = cleanup ]; then
+                    new_active
+                    hosts_pinned "$NEW" "$OLD"
+                else
+                    unchanged
+                    hosts_pinned "$OLD"
+                fi
                 fw lockdown provider.test secondary.test
                 new_active
+                hosts_pinned "$NEW" "$OLD"
                 ;;
             concurrency)
                 new_answers
@@ -331,14 +372,14 @@ case "$CASE" in
                 if [[ "$CASE" == *-before ]]; then unchanged; else new_active; fi
                 : > "$R/release"
                 wait "$worker"
-                if [[ "$CASE" == *-before ]]; then new_active; else unchanged; fi
+                if [[ "$CASE" == *-before ]]; then new_active; hosts_pinned "$NEW" "$OLD"; else unchanged; hosts_pinned "$OLD" "$NEW"; fi
                 stop_watch
                 ;;
             state-committed|state-backend|state-layout|state-missing-backend|state-missing-layout|state-pending-committed)
                 case "$CASE" in
                     state-committed) real_tables -X CLAUDE_LOCKDOWN; rm -- "$STATE/backend" "$STATE/layout" ;;
                     state-backend) printf 'invalid\n' > "$STATE/backend" ;;
-                    state-layout) real_tables -D OUTPUT -p udp --dport 53 -j ACCEPT ;;
+                    state-layout) real_tables -D OUTPUT -o lo -j ACCEPT ;;
                     state-missing-backend) rm -- "$STATE/backend" ;;
                     state-missing-layout) rm -- "$STATE/layout" ;;
                     state-pending-committed) printf 'provider.test\n' > "$STATE/installing" ;;
@@ -353,6 +394,7 @@ case "$CASE" in
                 if [ "$CASE" = smoke-positive ]; then : > "$R/smoke-positive-fail"; else : > "$R/smoke-negative-success"; fi
                 expect_failure fw lockdown provider.test secondary.test
                 new_active
+                hosts_pinned "$NEW" "$OLD"
                 ;;
             *) die "unknown scenario: $CASE" ;;
         esac

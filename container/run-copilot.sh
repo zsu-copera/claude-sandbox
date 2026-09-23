@@ -53,6 +53,13 @@ fi
 # (api.github.com/meta) carry the allow; hostnames remain for the Azure-hosted
 # transports and the smoke test.
 #
+# Since E6 the agent has no DNS: only these hostnames resolve, from the /etc/hosts
+# that init-firewall.sh pins. The api.{business,individual,enterprise} names are the
+# per-licence model endpoints; the CLI picks one after sign-in (business was observed
+# in the 2026-09-23 discovery run). github.com is deliberately not listed: the CLI
+# worked without resolving it, and an unresolvable github.com is one more accidental-push
+# barrier. Telemetry and update-check names also stay unresolvable.
+#
 # HONEST LIMITATION: github.com and api.githubcopilot.com are served from the
 # SAME address pool, so IP-level filtering cannot separate them — github.com is
 # technically connectable in every session. The no-push barrier is therefore the
@@ -77,6 +84,8 @@ fi
 MODE_DOMAINS=(
     api.githubcopilot.com
     api.enterprise.githubcopilot.com
+    api.business.githubcopilot.com
+    api.individual.githubcopilot.com
     api.github.com
     copilot-proxy.githubusercontent.com
     origin-tracker.githubusercontent.com
