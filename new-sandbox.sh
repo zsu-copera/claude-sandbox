@@ -134,15 +134,15 @@ chmod 600 "$SANDBOX_ROOT/.secrets/settings.xml" "$SANDBOX_ROOT/.secrets/npmrc"
 
 echo ""
 echo "Sandbox ready at $SANDBOX_ROOT"
+# Point at the guarded procedure rather than printing a shell recipe (finding E5): a
+# plain `podman run ... bash` has no lockdown and still holds the prepare credentials.
 cat <<EOF
 
-Next steps (inside this WSL distro):
-  cd $SANDBOX_ROOT
-  podman build -t pera-sandbox -f .devcontainer/Dockerfile .
-  podman run -it --cap-add=NET_ADMIN --cap-add=NET_RAW \\
-    -v $SANDBOX_ROOT:/workspace -v pera-claude-config:/home/vscode/.claude \\
-    -w /workspace pera-sandbox bash
-  # then in the container:  prepare-sandbox   ->   run-agent
+Next steps: follow QUICKSTART.md from step 2 (build the image), step 3 (prepare),
+then step 4 (run-agent or run-copilot). Its commands assume ~/pera-sandbox; if you
+set SANDBOX_ROOT, use $SANDBOX_ROOT and a matching container-name suffix instead.
+Start agents only through run-agent / run-copilot. An interactive shell in the
+image has no firewall lockdown and still holds the Nexus credentials.
 
 Review from Windows:  \\\\wsl\$\\centos-9\\${SANDBOX_ROOT#/}
 EOF
