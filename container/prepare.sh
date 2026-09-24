@@ -56,8 +56,8 @@ git config --global --add safe.directory '*' 2>/dev/null || true
 # account and breaks blame/PR attribution. The round importer refuses a repo without one.
 #
 # Set it PER-REPO, not --global. run-agent runs in a SEPARATE container and only
-# /workspace and the config volumes persist (same reason the CLIs are staged on the
-# workspace mount below), so a --global config written here never reaches the agent.
+# /workspace and the config volumes persist, so a --global config written here never
+# reaches the agent.
 # Per-repo config lives in /workspace/<repo>/.git/config, which does persist.
 #
 # The human who audits and pushes the work is the author; if an agent wants to record
@@ -91,32 +91,15 @@ echo "==> Staging npm credentials (~/.npmrc, purged by run-agent)"
 cp "$NPMRC_SRC" "$HOME/.npmrc"
 chmod 600 "$HOME/.npmrc"
 
-# --- Refresh agent CLIs to latest -----------------------------------------------
-# The run-agent/run-copilot containers are SEPARATE from this one (only /workspace
-# and the config volumes persist), so refreshed CLIs are staged on the workspace
-# mount: Claude as a ~/.local tarball that run-agent unpacks ($HOME is the same
-# absolute path in every container, so the installer's symlinks stay valid), and
-# Copilot as an npm prefix install (relative symlinks, self-contained). Non-fatal:
-# on failure the agents fall back to the image-baked versions.
-AGENT_CLI="$WS/.agent-cli"
-mkdir -p "$AGENT_CLI"
-
-echo "==> Refreshing Claude Code (native installer -> $AGENT_CLI/claude-local.tgz)"
-if curl -fsSL https://claude.ai/install.sh | bash \
-        && tar -C "$HOME" -czf "$AGENT_CLI/claude-local.tgz" .local; then
-    echo "    -> staged: $("$HOME/.local/bin/claude" --version 2>/dev/null || echo '(version check failed)')"
-else
-    rm -f "$AGENT_CLI/claude-local.tgz"
-    echo "WARN: Claude Code refresh failed — run-agent will use the image-baked CLI" >&2
-fi
-
-echo "==> Refreshing Copilot CLI (Nexus npm -> $AGENT_CLI/copilot)"
-if NPM_CONFIG_PREFIX="$AGENT_CLI/copilot" npm install -g "@github/copilot" \
-        --no-audit --no-fund --registry="$NPM_REG" >/dev/null; then
-    echo "    -> staged: $("$AGENT_CLI/copilot/bin/copilot" --version 2>/dev/null || echo '(version check failed)')"
-else
-    rm -rf "$AGENT_CLI/copilot"
-    echo "WARN: Copilot CLI refresh failed — run-copilot will use the image-baked CLI" >&2
+# --- Agent CLIs come from the image only -----------------------------------------
+# Earlier versions refreshed both CLIs here and staged them on the workspace mount for
+# run-agent / run-copilot to prefer. The workspace is agent-writable and persists, so a
+# session could leave the next one a modified CLI (finding N5, decision A): the launchers
+# now run only the image-baked CLIs, and a CLI update is an image rebuild. Remove the
+# retired staging so nobody mistakes it for what runs.
+if [ -e "$WS/.agent-cli" ] || [ -L "$WS/.agent-cli" ]; then
+    echo "==> Removing retired CLI staging ($WS/.agent-cli); agents use the image-baked CLIs"
+    rm -rf "$WS/.agent-cli"
 fi
 
 # --- Assemble the node dist tarballs frontend-maven-plugin expects --------------

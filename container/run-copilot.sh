@@ -119,11 +119,10 @@ mkdir -p "$COPILOT_DIR"
 REFRESH_PID=$!
 trap 'kill "$REFRESH_PID" 2>/dev/null || true' EXIT
 
-# Use the prepare-staged latest Copilot CLI if present (image-baked CLI is the
-# fallback). The npm-prefix install under /workspace is self-contained.
-if [ -x "$WS/.agent-cli/copilot/bin/copilot" ]; then
-    export PATH="$WS/.agent-cli/copilot/bin:$PATH"
-fi
+# Only the image-baked, root-owned CLI runs (finding N5, decision A). A workspace copy,
+# such as the /workspace/.agent-cli an older prepare staged, is agent-writable, and the
+# tool-layer barriers below are only as good as the CLI that enforces them. `copilot`
+# resolves to the guarded wrapper, which re-checks the lockdown and capability state.
 
 cd "$WS"
 echo "==> Starting Copilot CLI $(copilot --version 2>/dev/null || echo '(version unknown)') (autonomous) in $WS"

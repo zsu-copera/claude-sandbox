@@ -4,12 +4,76 @@
 #   run-agent                                   # interactive
 #   run-agent -p "task…" --output-format json   # headless; extra args pass through
 #
-# Order matters: lockdown first (fails hard if it can't), THEN purge credentials,
-# THEN start the agent. A background loop re-resolves the Anthropic allowlist every
-# 15 min (staged allowlist updates, without flushing live rules).
+# Order matters: check the persistent inputs (refusing before any network change), THEN
+# lockdown (fails hard if it can't), THEN purge credentials, THEN start the agent. A
+# background loop re-resolves the Anthropic allowlist every 15 min (staged allowlist
+# updates, without flushing live rules).
 set -euo pipefail
 
 WS=/workspace
+CONFIG="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+CANONICAL=/usr/local/share/pera-sandbox/claude-project-settings.json
+# sha256 of the only overlay .claude/settings.json shipped before Phase 3. Workspaces
+# assembled earlier still carry it; under the managed policy its scalars lose and its
+# lists (allowWrite /tmp, api.anthropic.com) add nothing.
+LEGACY_PROJECT_SHA=58804644b538df8ff209284dc4fc4342946d1b2879cc302095d57eaa7ccb7eff
+# User-settings keys that neither run commands nor touch the sandbox. Deliberately
+# closed: a key a future CLI adds is refused until someone reviews it.
+USER_KEYS='["$schema","effortLevel","language","model","outputStyle","skipDangerousModePermissionPrompt","theme","tui","viewMode"]'
+
+# Managed-policy redirects (Phase 3 spec §4.2). The environment comes from the operator's
+# podman run; this closes it against a mistaken or copied -e. The claude wrapper repeats it.
+unset CLAUDE_CODE_MANAGED_SETTINGS_PATH CLAUDE_CODE_REMOTE_SETTINGS_PATH \
+      CLAUDE_CODE_MOCK_REMOTE_SETTINGS CLAUDE_CODE_DISABLE_ADMIN_ENV_UNION \
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB
+
+# Finding N5: the workspace and the config volume persist between sessions and the agent
+# can write both, so one session could hand the next a looser policy. Managed settings
+# win for scalars, but lists merge from every scope, nothing locks excludedCommands (which
+# run outside bubblewrap) or allowWrite, and user settings may still set command-running
+# keys (statusLine, apiKeyHelper, ...). Every such input is checked here, while no agent
+# process exists. A change refuses the launch rather than being silently repaired, so a
+# human sees that something changed. Recovery: QUICKSTART "Startup refusals".
+refuse_n5() {
+    echo "==> REFUSED (finding N5): $1" >&2
+    echo "    A previous session or a manual edit changed a persistent input. Inspect it" >&2
+    echo "    before restoring it; see QUICKSTART \"Startup refusals\"." >&2
+    exit 78
+}
+absent()  { [ ! -e "$1" ] && [ ! -L "$1" ]; }
+regular() { [ -f "$1" ] && [ ! -L "$1" ]; }
+for d in "$WS/.claude" "$CONFIG"; do
+    absent "$d" || { [ -d "$d" ] && [ ! -L "$d" ]; } || refuse_n5 "$d is not a plain directory"
+done
+p="$WS/.claude/settings.json"
+if ! absent "$p"; then
+    regular "$p" || refuse_n5 "$p is not a regular file"
+    cmp -s -- "$p" "$CANONICAL" || [ "$(sha256sum < "$p")" = "$LEGACY_PROJECT_SHA  -" ] \
+        || refuse_n5 "$p differs from the canonical project settings ($CANONICAL)"
+fi
+for f in "$WS/.claude/settings.local.json" "$WS/.mcp.json"; do
+    absent "$f" || refuse_n5 "$f must not exist"
+done
+u="$CONFIG/settings.json"
+if ! absent "$u"; then
+    regular "$u" || refuse_n5 "$u is not a regular file"
+    extra=$(jq -r --argjson ok "$USER_KEYS" \
+        'if type == "object" then keys - $ok | join(" ") else error("not an object") end' "$u" 2>/dev/null) \
+        || refuse_n5 "$u does not parse as a JSON object"
+    [ -z "$extra" ] || refuse_n5 "$u sets keys outside the reviewed allowlist: $extra"
+fi
+r="$CONFIG/remote-settings.json"
+if ! absent "$r"; then
+    { regular "$r" && case "$(jq -c . "$r" 2>/dev/null)" in '[]'|'{}') true ;; *) false ;; esac; } \
+        || refuse_n5 "$r holds a server-managed settings cache; only [] or {} is accepted"
+fi
+for c in "$CONFIG/.claude.json" "$HOME/.claude.json"; do
+    absent "$c" && continue
+    n=$(jq '[.. | objects | select(has("mcpServers")) | .mcpServers | select(. != {} and . != null)] | length' \
+        "$c" 2>/dev/null) || refuse_n5 "$c does not parse"
+    [ "$n" = 0 ] || refuse_n5 "$c configures MCP servers"
+done
+unset d p f u r c n extra
 
 echo "==> Locking down egress (Anthropic endpoints only)"
 sudo /usr/local/bin/init-firewall.sh lockdown
@@ -31,12 +95,9 @@ rm -f "$HOME/.npmrc" 2>/dev/null || true             # staged by prepare (carrie
 REFRESH_PID=$!
 trap 'kill "$REFRESH_PID" 2>/dev/null || true' EXIT
 
-# Use the prepare-staged latest Claude Code if present (image-baked CLI is the
-# fallback). Same $HOME across containers keeps the installer's symlinks valid.
-if [ -f "$WS/.agent-cli/claude-local.tgz" ]; then
-    echo "==> Installing prepare-staged Claude Code"
-    tar -C "$HOME" -xzf "$WS/.agent-cli/claude-local.tgz"
-fi
+# Only the image-baked CLI runs (finding N5, decision A). Anything under the workspace,
+# including a /workspace/.agent-cli left by an older prepare, is agent-writable and would
+# carry a modified CLI into the next session. CLI updates are image rebuilds.
 
 cd "$WS"
 echo "==> Starting Claude Code $(claude --version 2>/dev/null || echo '(version unknown)') (bypassPermissions) in $WS"
@@ -53,5 +114,7 @@ echo "==> Starting Claude Code $(claude --version 2>/dev/null || echo '(version 
 # used rather than `capsh --caps=""` because it execs a real argv, so "$@" passes through
 # without shell-string requoting. The 15-min refresh loop above was forked BEFORE this
 # point and reaches root via sudo, so it keeps working.
+# `claude` resolves to the guarded wrapper, which re-checks this state and execs the baked
+# CLI. The mandatory policy is /etc/claude-code/managed-settings.json (E2/E3).
 setpriv --inh-caps=-all --ambient-caps=-all \
     claude --dangerously-skip-permissions "$@"
