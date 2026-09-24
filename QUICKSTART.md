@@ -371,8 +371,15 @@ Both refusals exit 78 and change nothing; the message names the finding and the 
   read the file as data (never execute it), check the last session's review record, and
   note what you found before restoring. Do not start the CLI some other way to get past it.
   - **Workspace** (`~/pera-sandbox/.claude/settings.json`, `.claude/settings.local.json`,
-    `.mcp.json`): restore the canonical file and remove the others, inside WSL:
-    `cp --remove-destination /mnt/c/work/pera/claude-sandbox/container/claude-project-settings.json ~/pera-sandbox/.claude/settings.json`
+    `.mcp.json`, or a `.git` at the workspace root): restore the canonical file and remove
+    the others, inside WSL:
+    `cp --remove-destination /mnt/c/work/pera/claude-sandbox/container/claude-project-settings.json ~/pera-sandbox/.claude/settings.json`.
+    A root `.git` makes the workspace a git worktree and moves where Claude reads local
+    settings. If you find one, also look for a `.claude/settings.local.json` inside `prj`
+    or `Documentation`.
+  - **Copilot package cache** (`~/.copilot/pkg` in `pera-copilot-config`): a package there
+    would run instead of the baked CLI. Inspect it in a disposable container as below, with
+    `-v pera-copilot-config:/home/vscode/.copilot`, and remove the `pkg` directory.
   - **Config volume** (`settings.json`, `remote-settings.json`, `.claude.json`): the
     volume is reachable only through a container, so inspect and repair it in a
     disposable one with no network. Do not copy the volume elsewhere.
@@ -393,6 +400,9 @@ Both refusals exit 78 and change nothing; the message names the finding and the 
 
 Workspaces assembled before Phase 3 carry the old project settings; `run-agent`
 accepts that exact file, so they need no change.
+
+The checks assume nothing else writes the workspace or the config volume while a launcher
+starts. Run one agent session per workspace and per login volume at a time.
 
 ## Update the image without resetting the workspace
 

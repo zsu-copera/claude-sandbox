@@ -121,7 +121,11 @@ before touching the code.
   and `.claude.json` are checked and a change refuses with exit 78. The user-settings
   allowlist is a reviewed decision; do not widen it to make a launch pass.
 - **Only the image-baked CLIs run (N5, decision A).** Do not reintroduce a workspace-staged
-  or otherwise agent-writable CLI; a CLI update is an image rebuild.
+  or otherwise agent-writable CLI; a CLI update is an image rebuild. Copilot's loader
+  would otherwise prefer a newer package from `~/.copilot/pkg` on its persistent volume.
+  The wrapper therefore always passes `--no-auto-update`, and a `pkg` directory refuses
+  the start. `run-agent` also refuses a `/workspace/.git`, which would move where Claude
+  reads local settings (review H1/H2, spec §11).
 - **Guarded wrappers (E5).** Root-owned `claude` / `copilot` wrappers first on the image
   `PATH` refuse before lockdown or with capabilities held. They guard operator mistakes,
   not the agent. S25/S26 and `verify-startup.sh` cover this and the previous two items.

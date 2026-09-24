@@ -24,7 +24,7 @@ settings-precedence work is not delegable without review):
 
 | Item | What is needed |
 |---|---|
-| E2/E3, E5, N5 | **Implemented in source, not deployed** ([Phase 3](#phase-3-inner-sandbox-and-guarded-startup-2026-09-24), spec approved 2026-09-24). Root-owned managed policy, startup checks of the next session's inputs, baked CLIs only, guarded wrappers. Remaining: the independent review of the diff; the live observations L1–L10 on a derived test image, then on the rebuilt image; one coordinated rebuild. Not deployed until L1–L10 are observed on the rebuilt image. |
+| E2/E3, E5, N5 | **Implemented in source, not deployed** ([Phase 3](#phase-3-inner-sandbox-and-guarded-startup-2026-09-24), spec approved 2026-09-24). Root-owned managed policy, startup checks of the next session's inputs, baked CLIs only, guarded wrappers. Independent review done; its two high findings (H1 Copilot package cache, H2 `/workspace/.git`) are fixed and tested. Live observations on a throwaway test image are recorded (spec §10). Remaining: one coordinated rebuild with the ticket lead, then L1–L10 again on the rebuilt image. Not deployed until then. |
 | C5, sign-off | Security/IT sign-off before other developers run unattended. Record it here. |
 
 **Blocking a second developer** (mechanical unless noted):
@@ -687,3 +687,20 @@ Copilot's `~/.copilot` configuration; and operator-supplied launcher arguments s
   sandbox (L4).
 
 These observations are not deployment: they must be repeated on the rebuilt image.
+
+**Independent review** ([spec §11](design/phase3-inner-sandbox-and-startup.md#11-independent-review-and-fixes-2026-09-24)).
+A context-isolated reviewer found two high-severity gaps in N5, both fixed and covered by
+new `verify-startup.sh` scenarios that fail when their fix is removed:
+
+- **H1.** Copilot's loader would run a newer package from `~/.copilot/pkg` on its
+  persistent volume, including for the `--version` banner, which ran before the capability
+  drop. Every Copilot call now gets `--no-auto-update` with the cache redirects removed; a
+  `pkg` directory refuses the start; and both banners run with capabilities dropped.
+- **H2.** A `/workspace/.git` would make Claude read local settings from an unchecked
+  `prj/.claude/settings.local.json`, and a live probe showed sandboxed Bash can write that
+  file. `run-agent` now refuses a root `.git` and unsets the git redirect variables.
+
+Also fixed: a FIFO `.claude.json`, more settings-redirect variables, and the remaining S10
+keys. Accepted: the server-settings companion files and `policy-limits.json`, which can only
+relax organisation limits, and the need to run one session per workspace at a time.
+Still not covered: Copilot's `installed-plugins/` and the rest of `~/.copilot`.

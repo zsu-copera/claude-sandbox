@@ -1164,8 +1164,9 @@ workspace. Static assertions: 22 passed, 0 failed, 2 skipped.
 ### Inner sandbox and guarded startup (E2/E3, E5, N5), 2026-09-24
 
 New `verify-startup.sh` (run in WSL; needs the existing image; `--network=none`, no
-credential, no workspace): **37 passed, 0 failed, 1 skipped**. `baked-layout` needs
-`--baked` on a rebuilt image. Each scenario runs in its own container. The fixture
+credential, no workspace): **42 passed, 0 failed, 1 skipped** after the review fixes
+(37 before them). `baked-layout` needs `--baked`; on the throwaway test image
+`localhost/pera-sandbox-p3test` the `--baked` run gave 38 of 38 before the review fixes. Each scenario runs in its own container. The fixture
 installs the source policy, wrapper and launchers, replaces both real CLIs with a recorder
 and the firewall with a fake sudo, and runs the launcher or wrapper as `vscode` with every
 capability cleared.
@@ -1199,6 +1200,14 @@ capability cleared.
 - **`run-copilot`, run end to end through the wrapper,** takes the static-CIDR fallback.
   Before D-8 it exited 6 there.
 
+Added after the independent review (spec §11):
+- `run-agent` refuses a `/workspace/.git` file or directory, and a FIFO `.claude.json`,
+  without hanging.
+- Copilot always receives `--no-auto-update` and `COPILOT_AUTO_UPDATE=false`, including for
+  the banner's `--version`.
+- A `~/.copilot/pkg` cache is refused by the wrapper, even for `--version`, and by
+  `run-copilot` before any firewall call.
+
 Mutation check: broken copies of the scaffold in a WSL temp directory, each run through
 the suite and the static checks.
 
@@ -1214,11 +1223,37 @@ the suite and the static checks.
 | Managed file with `allowUnsandboxedCommands: true` | S10 |
 | Managed file with a widened `allowWrite` | S10 |
 | Wrapper directory placed after `~/.local/bin` on `PATH` | S25 |
+| `run-agent` without the `/workspace/.git` refusal | 2 scenarios |
+| `run-agent` without the regular-file check on `.claude.json` | the FIFO scenario |
+| Wrapper without `--no-auto-update` | 3 scenarios |
+| Wrapper without the package-cache refusal | `copilot-pkg-wrapper` |
+| `run-copilot` without the package-cache refusal | `copilot-pkg-launcher` |
 
 The static checks also passed on the jq path in WSL.
 
 Not shown by any of this: what the Claude CLI does with the managed file. That is the
-spec's live L1–L10. Static assertions: 24 passed, 0 failed, 2 skipped.
+spec's live L1–L10 (§10). Static assertions: 24 passed, 0 failed, 2 skipped.
+
+The full ladder before the review fixes, in WSL, all exit 0:
+
+| Suite | Result |
+|---|---|
+| `verify-scaffold` | 24 passed, 2 skipped |
+| `verify-startup` | 37 passed |
+| `verify-firewall` | 66 passed |
+| `verify-rounds` | 78 passed |
+| `verify-tasks` | exit 0 |
+| `verify-assembly` | 33 passed |
+| `verify-recording` | 16 passed |
+
+After the review fixes, three suites were rerun, because the fixes touch only the
+launchers, the wrapper and their tests:
+- `verify-scaffold`: 24 passed.
+- `verify-startup`: 42 passed; 43 of 43 with `--baked` on the rebuilt test image `7eb17d68…`.
+- `verify-firewall`: 66 passed.
+
+The real Copilot 1.0.83 on that image printed its version through the wrapper with
+`--no-auto-update`, and refused (exit 78) once a `~/.copilot/pkg` directory existed.
 
 ## Deliberately not asserted
 

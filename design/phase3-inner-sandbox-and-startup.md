@@ -280,3 +280,27 @@ was written to it. Transcripts are private host evidence outside the repository.
 **Still to observe:** all of L1–L10 on the rebuilt image, and a guarded Copilot session
 through the wrapper (it needs the PAT, so it was left to the first post-rebuild session).
 L9 is the suite ladder recorded in `VERIFY-ASSERTIONS.md`.
+
+## 11. Independent review and fixes (2026-09-24)
+
+A context-isolated reviewer read the diff against this spec, ran the static checks and
+`verify-startup.sh`, and probed the 2.1.280 and Copilot 1.0.83 binaries in disposable
+`--network=none` containers without a login.
+
+| Finding | Disposition |
+|---|---|
+| **H1** (high). Copilot's npm loader runs a *newer* package from its cache in preference to the baked one, and `~/.copilot/pkg` lives on the persistent, agent-writable config volume. A planted package also ran for `copilot --version`, which `run-copilot` calls for its banner **before** the capability drop. N5(a) was therefore not closed for Copilot. | **Fixed.** The wrapper adds `--no-auto-update` to every Copilot call, including `--version`/`--help` (the reviewer observed the baked version run with it). It sets `COPILOT_AUTO_UPDATE=false` and unsets `COPILOT_HOME`, `COPILOT_CACHE_HOME`, `COPILOT_PKG_CACHE_HOME` and `COPILOT_CLI_VERSION`. The wrapper, and `run-copilot` before lockdown, refuse if `~/.copilot/pkg` exists (the real volume has none). Both launchers now run their version banner with capabilities dropped. |
+| **H2** (high). Claude reads `localSettings` at the canonical git root. A `/workspace/.git` naming `prj/.git` as its gitdir moves that to `prj/.claude/settings.local.json`, which is unchecked. A live probe showed sandboxed Bash **can** write that file, and it persisted to the host. The Bash write to `/workspace/.git` did not persist, but the Write tool is not denied there. | **Fixed.** `run-agent` refuses any `/workspace/.git` (file, directory or symlink), and both launchers unset `GIT_DIR`, `GIT_WORK_TREE` and `GIT_COMMON_DIR`. The Git root then stays unset and the local settings path stays `/workspace/.claude/`, which is denied in-session. The files the redirect would read are then never loaded, so I did not add refusals for `*/.claude/settings.local.json` or an `Edit(//workspace/**/.claude/**)` deny (the host `prj` has an untracked `.claude/`). |
+| **M1** (medium). The server-settings cache has companions (`remote-settings.json.signature*.json`, `remote-settings-consent.json`, `remote-settings-helper-consent`) plus `policy-limits.json`, none of which are checked. | **Accepted, documented.** The companions only qualify a `remote-settings.json`, which must be `[]`/`{}`. `policy-limits.json` can only relax organisation limits such as remote control, never the managed file's rules, and the organisation policy is re-fetched at startup. |
+| **M2** (medium). The environment denylist is incomplete: `CLAUDE_CODE_USE_COWORK_PLUGINS`, `CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST`, `CLAUDE_CODE_BRIDGE_CHILD_MACHINE_SETTINGS`, `CLAUDE_PROJECT_DIR` and others. | **Partly fixed.** Those four, and the git variables, are unset too. It is still a denylist of operator-supplied variables, not an allowlist; an `env -i` rebuild was judged too likely to break legitimate `-e` use for an operator-mistake guard. |
+| **L1**. `.claude.json` was not required to be a regular file (a FIFO hung `jq`). | **Fixed.** |
+| **L2**. The checks assume no other container writes the same workspace or volume while `run-agent` starts. | **Documented.** Run one session per workspace and volume (QUICKSTART). |
+| **L3**. S10 did not assert `bwrapPath`, `strictAllowlist`, `allowManagedReadPathsOnly`, `strictKnownMarketplaces` or the `.mcp.json` deny. S25/S26 are structural greps. | **Fixed for S10.** S25/S26 remain source-structure checks, with behaviour in `verify-startup.sh`, as `VERIFY-ASSERTIONS.md` says. |
+
+Also observed while checking H2: the sandbox's protective entries for dot-files such as
+`.mcp.json`, `.bashrc` and `.gitconfig` exist only inside bubblewrap. None appeared on the
+host, so the `Edit(//workspace/.mcp.json)` deny on a nonexistent path is safe for the next
+startup check.
+
+**Residual, still not covered:** Copilot's `installed-plugins/` and other `~/.copilot`
+state (§4.5); instruction files; operator-supplied launcher arguments.

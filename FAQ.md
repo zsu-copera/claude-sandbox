@@ -367,9 +367,11 @@ the rebuilt image passes the live checks in the
 
 **`run-agent` or `claude` says `REFUSED (finding N5)` or `(finding E5)`. What now?**
 Nothing was changed. E5 means an agent CLI was started outside `run-agent` /
-`run-copilot`. N5 means an input that survives between sessions (the workspace's
-`.claude/` settings, `.mcp.json`, or the config volume's user settings, server-managed
-settings cache or `.claude.json`) would give the next session a looser policy. Treat it as
+`run-copilot`. N5 means an input that survives between sessions would give the next
+session a looser policy. That covers:
+- the workspace's `.claude/` settings, `.mcp.json` or a root `.git`;
+- the Claude config volume's user settings, server-managed settings cache or `.claude.json`;
+- a package cache in the Copilot volume. Treat it as
 something a previous session did until you know otherwise. Inspect and restore it as in
 [QUICKSTART "Startup refusals"](QUICKSTART.md#startup-refusals).
 

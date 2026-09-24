@@ -40,7 +40,8 @@ CLI, `--allow-all-tools`). Isolation layers:
 4. **Guarded, checked startup** — root-owned `claude` / `copilot` wrappers refuse to
    start an agent before lockdown or while capabilities are held (E5); `run-agent`
    refuses when a previous session left the workspace or config volume a looser policy;
-   and only the image-baked CLIs run (N5).
+   and only the image-baked CLIs run (N5). Copilot always gets `--no-auto-update`, and a
+   package cache left on its volume refuses the start.
 
 The required workflow is **local commits only**: the sandbox repos have no remotes,
 common push commands are deny-ruled, and a human reviews and pushes from Windows.
@@ -209,7 +210,7 @@ podman run -it --name pera-agent --rm --userns=keep-id \
 
 `run-agent` first checks the inputs that persist between sessions (finding N5): the
 workspace's `.claude/settings.json` must equal the canonical copy, no
-`settings.local.json` or `.mcp.json` may exist, and the config volume's user settings,
+`settings.local.json`, `.mcp.json` or root `.git` may exist, and the config volume's user settings,
 server-managed settings cache and `.claude.json` may not add commands, hooks or MCP
 servers. Any change refuses with exit 78 before the network is touched (recovery:
 [QUICKSTART](QUICKSTART.md#startup-refusals)). It then locks the firewall (Anthropic-only;
