@@ -279,10 +279,17 @@ else
     for k in allowManagedPermissionRulesOnly allowManagedHooksOnly allowManagedMcpServersOnly; do
         chk "$k" ".$k == true" "o.$k === true"
     done
+    chk bwrapPath '.sandbox.bwrapPath == "/usr/bin/bwrap"' 'o.sandbox.bwrapPath === "/usr/bin/bwrap"'
+    chk strictAllowlist '.sandbox.network.strictAllowlist == true' 'o.sandbox.network.strictAllowlist === true'
+    chk managed-read-paths-only '.sandbox.filesystem.allowManagedReadPathsOnly == true' \
+        'o.sandbox.filesystem.allowManagedReadPathsOnly === true'
+    chk no-marketplaces '.strictKnownMarketplaces == []' \
+        'Array.isArray(o.strictKnownMarketplaces) && o.strictKnownMarketplaces.length === 0'
     chk allowedMcpServers-empty '.allowedMcpServers == []' \
         'Array.isArray(o.allowedMcpServers) && o.allowedMcpServers.length === 0'
     for rule in 'Bash(git push)' 'Bash(git push *)' 'Read(//workspace/.secrets/**)' \
-                'Read(//home/vscode/.claude/**)' 'Edit(//workspace/.claude/**)' 'Edit(//home/vscode/.claude/**)'; do
+                'Read(//home/vscode/.claude/**)' 'Edit(//workspace/.claude/**)' 'Edit(//home/vscode/.claude/**)' \
+                'Edit(//workspace/.mcp.json)'; do
         chk "deny:$rule" "any(.permissions.deny[]; . == \"$rule\")" "o.permissions.deny.includes(\"$rule\")"
     done
     # Sessions run in bypass mode by design; a lock here would stop every launch.
@@ -537,8 +544,10 @@ grep -qF 'cp "$SCAFFOLD/container/claude-project-settings.json" "$SANDBOX_ROOT/.
     || s25_bad="$s25_bad assembly-not-canonical"
 g=container/agent-cli-guard.sh
 wrapper_code=$(code_only "$g")
-for line in '    claude)  real=/home/vscode/.local/bin/claude ;;' '    copilot) real=/usr/local/bin/copilot ;;' \
-            'lock=/run/claude-lockdown-domains' 'exec "$real" "$@"'; do
+for line in '    claude)  real=/home/vscode/.local/bin/claude; pre=() ;;' \
+            '    copilot) real=/usr/local/bin/copilot;         pre=(--no-auto-update) ;;' \
+            'lock=/run/claude-lockdown-domains' 'exec "$real" "${pre[@]}" "$@"' \
+            '    export COPILOT_AUTO_UPDATE=false' '    pkg="$HOME/.copilot/pkg"'; do
     echo "$wrapper_code" | grep -qxF -- "$line" || s25_bad="$s25_bad wrapper:$line"
 done
 echo "$wrapper_code" | grep -qF 'CapInh:|CapPrm:|CapEff:|CapAmb:)' || s25_bad="$s25_bad wrapper-caps-check"
@@ -551,7 +560,9 @@ ra=container/run-agent.sh
 for f in "$ra" "$g"; do
     unsets=$(code_only "$f" | sed -n '/^ *unset CLAUDE_CODE_MANAGED_SETTINGS_PATH/,/[^\\]$/p')
     for v in CLAUDE_CODE_MANAGED_SETTINGS_PATH CLAUDE_CODE_REMOTE_SETTINGS_PATH CLAUDE_CODE_MOCK_REMOTE_SETTINGS \
-             CLAUDE_CODE_DISABLE_ADMIN_ENV_UNION CLAUDE_CODE_SUBPROCESS_ENV_SCRUB; do
+             CLAUDE_CODE_DISABLE_ADMIN_ENV_UNION CLAUDE_CODE_SUBPROCESS_ENV_SCRUB CLAUDE_CODE_USE_COWORK_PLUGINS \
+             CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST CLAUDE_CODE_BRIDGE_CHILD_MACHINE_SETTINGS CLAUDE_PROJECT_DIR \
+             GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR; do
         echo "$unsets" | grep -qw -- "$v" || s26_bad="$s26_bad $f:no-unset-$v"
     done
 done
@@ -560,7 +571,7 @@ done
 grep -qxF 'USER_KEYS='\''["$schema","effortLevel","language","model","outputStyle","skipDangerousModePermissionPrompt","theme","tui","viewMode"]'\''' "$ra" \
     || s26_bad="$s26_bad user-allowlist-changed"
 ra_code=$(code_only "$ra")
-for needle in '"$WS/.claude/settings.local.json" "$WS/.mcp.json"' 'remote-settings.json' 'mcpServers' \
+for needle in '"$WS/.claude/settings.local.json" "$WS/.mcp.json" "$WS/.git"' 'remote-settings.json' 'mcpServers' \
               'LEGACY_PROJECT_SHA=' 'cmp -s -- "$p" "$CANONICAL"'; do
     echo "$ra_code" | grep -qF -- "$needle" || s26_bad="$s26_bad no-check:$needle"
 done
@@ -573,6 +584,12 @@ fi
 for f in container/run-agent.sh container/run-copilot.sh; do
     code_only "$f" | grep -q 'agent-cli' && s26_bad="$s26_bad $f:uses-staged-cli"
 done
+rc_code=$(code_only container/run-copilot.sh)
+echo "$rc_code" | grep -qF 'if [ -e "$COPILOT_DIR/pkg" ] || [ -L "$COPILOT_DIR/pkg" ]; then' || s26_bad="$s26_bad copilot-no-pkg-refusal"
+echo "$rc_code" | grep -qxF 'export COPILOT_AUTO_UPDATE=false' || s26_bad="$s26_bad copilot-auto-update-on"
+l_pkg=$(line_of container/run-copilot.sh 'COPILOT_DIR/pkg" \]; then')
+l_clock=$(line_of container/run-copilot.sh 'init-firewall.sh lockdown "${MODE_DOMAINS')
+{ [ -n "$l_pkg" ] && [ -n "$l_clock" ] && [ "$l_pkg" -lt "$l_clock" ]; } || s26_bad="$s26_bad copilot-pkg-check-not-before-lockdown"
 [ -z "$s26_bad" ] && pass S26 "run-agent checks persistent inputs before lockdown; launchers run only baked CLIs" \
                               "Behavior: verify-startup.sh." \
                   || fail S26 "next-session input checks or the baked-CLI rule changed (finding N5)" "broken:$s26_bad"

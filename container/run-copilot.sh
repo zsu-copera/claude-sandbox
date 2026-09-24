@@ -34,6 +34,17 @@ case "${COPILOT_GITHUB_TOKEN:-}" in
     *) refuse_n3 "COPILOT_GITHUB_TOKEN is not a fine-grained PAT (github_pat_...)." ;;
 esac
 unset GH_TOKEN GITHUB_TOKEN
+# Finding N5 for Copilot (Phase 3 review H1): the npm loader runs a NEWER package from its
+# cache in preference to the baked CLI, and $COPILOT_DIR/pkg is on the persistent,
+# agent-writable volume. The guarded wrapper adds --no-auto-update to every call; a cache
+# left there refuses here, before any network change, so a human sees it.
+export COPILOT_AUTO_UPDATE=false
+unset COPILOT_HOME COPILOT_CACHE_HOME COPILOT_PKG_CACHE_HOME COPILOT_CLI_VERSION
+if [ -e "$COPILOT_DIR/pkg" ] || [ -L "$COPILOT_DIR/pkg" ]; then
+    echo "==> REFUSED (finding N5): $COPILOT_DIR/pkg exists; a package there would run instead of the baked CLI." >&2
+    echo "    Inspect it, then remove it; see QUICKSTART \"Startup refusals\"." >&2
+    exit 78
+fi
 if [ -e "$COPILOT_DIR/config.json" ]; then
     # config.json starts with // comment lines, so strip them before parsing. Fail closed:
     # an unparseable file, or any stored token other than a PAT, refuses the launch.
@@ -127,7 +138,8 @@ trap 'kill "$REFRESH_PID" 2>/dev/null || true' EXIT
 # resolves to the guarded wrapper, which re-checks the lockdown and capability state.
 
 cd "$WS"
-echo "==> Starting Copilot CLI $(copilot --version 2>/dev/null || echo '(version unknown)') (autonomous) in $WS"
+# The version banner drops capabilities too: it executes the CLI's loader.
+echo "==> Starting Copilot CLI $(setpriv --inh-caps=-all --ambient-caps=-all copilot --version 2>/dev/null || echo '(version unknown)') (autonomous) in $WS"
 # GitHub write paths must be blocked at the tool layer because api.github.com stays
 # open for Copilot's own auth (syntax verified against copilot --help, v1.0.69):
 #   --disable-builtin-mcps      kills the built-in github-mcp-server (PR/issue/gist

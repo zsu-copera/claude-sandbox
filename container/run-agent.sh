@@ -21,11 +21,15 @@ LEGACY_PROJECT_SHA=58804644b538df8ff209284dc4fc4342946d1b2879cc302095d57eaa7ccb7
 # closed: a key a future CLI adds is refused until someone reviews it.
 USER_KEYS='["$schema","effortLevel","language","model","outputStyle","skipDangerousModePermissionPrompt","theme","tui","viewMode"]'
 
-# Managed-policy redirects (Phase 3 spec §4.2). The environment comes from the operator's
-# podman run; this closes it against a mistaken or copied -e. The claude wrapper repeats it.
+# Settings redirects (Phase 3 spec §4.2 and the review's M2), and git's, whose root decides
+# where Claude reads local settings. The environment comes from the operator's podman run;
+# this closes it against a mistaken or copied -e. It is a denylist of the variables known
+# to move settings, not an allowlist. The claude wrapper repeats it.
 unset CLAUDE_CODE_MANAGED_SETTINGS_PATH CLAUDE_CODE_REMOTE_SETTINGS_PATH \
       CLAUDE_CODE_MOCK_REMOTE_SETTINGS CLAUDE_CODE_DISABLE_ADMIN_ENV_UNION \
-      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB CLAUDE_CODE_USE_COWORK_PLUGINS \
+      CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST CLAUDE_CODE_BRIDGE_CHILD_MACHINE_SETTINGS \
+      CLAUDE_PROJECT_DIR GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR
 
 # Finding N5: the workspace and the config volume persist between sessions and the agent
 # can write both, so one session could hand the next a looser policy. Managed settings
@@ -51,7 +55,10 @@ if ! absent "$p"; then
     cmp -s -- "$p" "$CANONICAL" || [ "$(sha256sum < "$p")" = "$LEGACY_PROJECT_SHA  -" ] \
         || refuse_n5 "$p differs from the canonical project settings ($CANONICAL)"
 fi
-for f in "$WS/.claude/settings.local.json" "$WS/.mcp.json"; do
+# /workspace is not a repository. A .git there (a file naming prj/.git as its gitdir is
+# enough) makes it a worktree, and Claude then reads local settings at the canonical git
+# root, e.g. prj/.claude/settings.local.json, which is unchecked and writable in-session.
+for f in "$WS/.claude/settings.local.json" "$WS/.mcp.json" "$WS/.git"; do
     absent "$f" || refuse_n5 "$f must not exist"
 done
 u="$CONFIG/settings.json"
@@ -69,6 +76,7 @@ if ! absent "$r"; then
 fi
 for c in "$CONFIG/.claude.json" "$HOME/.claude.json"; do
     absent "$c" && continue
+    regular "$c" || refuse_n5 "$c is not a regular file"
     n=$(jq '[.. | objects | select(has("mcpServers")) | .mcpServers | select(. != {} and . != null)] | length' \
         "$c" 2>/dev/null) || refuse_n5 "$c does not parse"
     [ "$n" = 0 ] || refuse_n5 "$c configures MCP servers"
@@ -100,7 +108,8 @@ trap 'kill "$REFRESH_PID" 2>/dev/null || true' EXIT
 # carry a modified CLI into the next session. CLI updates are image rebuilds.
 
 cd "$WS"
-echo "==> Starting Claude Code $(claude --version 2>/dev/null || echo '(version unknown)') (bypassPermissions) in $WS"
+# The version banner drops capabilities too: nothing the CLI loads should ever hold them.
+echo "==> Starting Claude Code $(setpriv --inh-caps=-all --ambient-caps=-all claude --version 2>/dev/null || echo '(version unknown)') (bypassPermissions) in $WS"
 # Drop the firewall capabilities before handing control to the agent. Two reasons:
 #   1. bubblewrap — the harness's own per-command sandbox — REFUSES to start while the
 #      process holds capabilities without being setuid ("Unexpected capabilities but not

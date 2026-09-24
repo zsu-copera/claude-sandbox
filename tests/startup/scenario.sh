@@ -13,7 +13,10 @@ SC=${1:?scenario}
 S=/opt/src FX=/opt/fx R=/run/p3
 LOCK=/run/claude-lockdown-domains
 REDIRECTS=(CLAUDE_CODE_MANAGED_SETTINGS_PATH CLAUDE_CODE_REMOTE_SETTINGS_PATH CLAUDE_CODE_MOCK_REMOTE_SETTINGS
-           CLAUDE_CODE_DISABLE_ADMIN_ENV_UNION CLAUDE_CODE_SUBPROCESS_ENV_SCRUB)
+           CLAUDE_CODE_DISABLE_ADMIN_ENV_UNION CLAUDE_CODE_SUBPROCESS_ENV_SCRUB CLAUDE_CODE_USE_COWORK_PLUGINS
+           CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST CLAUDE_CODE_BRIDGE_CHILD_MACHINE_SETTINGS CLAUDE_PROJECT_DIR
+           GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR)
+COPILOT_REDIRECTS=(COPILOT_HOME COPILOT_CACHE_HOME COPILOT_PKG_CACHE_HOME COPILOT_CLI_VERSION)
 die() { echo "ASSERT($SC): $*" >&2; [ -f "$R/out" ] && sed 's/^/    | /' "$R/out" >&2; exit 1; }
 
 install -d -m 0755 "$R" /opt/p3bin
@@ -55,7 +58,7 @@ settings() { mkdir -p "$W/.claude"; printf '%s\n' "$1" > "$W/.claude/settings.js
 user() { printf '%s\n' "$1" > "$C/settings.json"; }
 as_agent() {
     local redirect=() v
-    for v in "${REDIRECTS[@]}"; do redirect+=("$v=/tmp/p3-injected"); done
+    for v in "${REDIRECTS[@]}" "${COPILOT_REDIRECTS[@]}"; do redirect+=("$v=/tmp/p3-injected"); done
     setpriv --reuid 1000 --regid 1000 --init-groups --inh-caps=-all --ambient-caps=-all \
         env -i HOME=/home/vscode USER=vscode LANG=C.UTF-8 CLAUDE_CONFIG_DIR="$C" PATH="$AGENT_PATH" \
         "${redirect[@]}" "$@"
@@ -93,6 +96,10 @@ case "$SC" in
     agent-claudejson-top)           echo '{"mcpServers":{"x":{"command":"sh"}}}' > "$C/.claude.json" ;;
     agent-claudejson-project)       echo '{"projects":{"/workspace":{"mcpServers":{"x":{"command":"sh"}}}}}' > "$C/.claude.json" ;;
     agent-claudejson-unparseable)   echo '{"projects":' > "$C/.claude.json" ;;
+    agent-claudejson-fifo)          mkfifo "$C/.claude.json" ;;
+    agent-workspace-git)            printf 'gitdir: prj/.git\n' > "$W/.git" ;;
+    agent-workspace-git-dir)        mkdir -p "$W/.git" ;;
+    copilot-pkg-wrapper|copilot-pkg-launcher) lock; mkdir -p /home/vscode/.copilot/pkg/linux-x64/99.0.0 ;;
     wrapper-lock-not-root)          lock; chown 1000:1000 "$LOCK" ;;
     wrapper-lock-symlink)           printf 'x\n' > /run/p3-real-lock; ln -s /run/p3-real-lock "$LOCK" ;;
     wrapper-lock-dir)               mkdir "$LOCK" ;;
@@ -126,9 +133,13 @@ ran() {       # $1 = binary the wrapper must have exec'd
     last=$(tail -1 "$R/cli-log")
     case "$last" in "$1"*) ;; *) die "wrong CLI ran: $last" ;; esac
     for v in "${REDIRECTS[@]}"; do ! grep -q "^$v=" "$R/cli-env" || die "$v reached the CLI"; done
+    case "$1" in /usr/local/bin/copilot*)
+        for v in "${COPILOT_REDIRECTS[@]}"; do ! grep -q "^$v=" "$R/cli-env" || die "$v reached copilot"; done ;;
+    esac
     held=$(awk '/^Cap(Inh|Prm|Eff|Amb):/ && $2 !~ /^0+$/' "$R/cli-caps")
     [ -z "$held" ] || die "CLI holds capabilities: $held"
 }
+no_update() { grep -qx 'COPILOT_AUTO_UPDATE=false' "$R/cli-env" || die "COPILOT_AUTO_UPDATE=false not set for copilot"; }
 case "$SC" in
     agent-legacy|agent-canonical|agent-absent)
         as_agent bash /usr/local/bin/run-agent --probe 'with space' > "$R/out" 2>&1 || rc=$?
@@ -141,11 +152,15 @@ case "$SC" in
     agent-project-symlink)          as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "is not a regular file" ;;
     agent-claude-dir-symlink)       as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "is not a plain directory" ;;
     agent-project-*)                as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "differs from the canonical project settings" ;;
-    agent-settings-local|agent-mcp-json) as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "must not exist" ;;
+    agent-settings-local|agent-mcp-json|agent-workspace-git|agent-workspace-git-dir) as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "must not exist" ;;
     agent-user-unparseable|agent-user-array) as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "does not parse as a JSON object" ;;
     agent-user-*)                   as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "outside the reviewed allowlist" ;;
     agent-remote-permissive)        as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "server-managed settings cache" ;;
     agent-claudejson-unparseable)   as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "does not parse" ;;
+    agent-claudejson-fifo)          timeout 20 setpriv --reuid 1000 --regid 1000 --init-groups --inh-caps=-all --ambient-caps=-all \
+                                        env -i HOME=/home/vscode CLAUDE_CONFIG_DIR="$C" PATH="$AGENT_PATH" bash /usr/local/bin/run-agent \
+                                        > "$R/out" 2>&1 || rc=$?
+                                    n5_refused "is not a regular file" ;;
     agent-claudejson-*)             as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "configures MCP servers" ;;
     wrapper-bare|wrapper-lock-not-root|wrapper-lock-symlink|wrapper-lock-dir)
         as_agent claude -p probe > "$R/out" 2>&1 || rc=$?; refused "REFUSED (finding E5): claude cannot start before" ;;
@@ -153,7 +168,7 @@ case "$SC" in
         as_agent claude --version -p probe > "$R/out" 2>&1 || rc=$?; refused "REFUSED (finding E5)" ;;
     wrapper-bare-version)
         as_agent claude --version > "$R/out" 2>&1 || rc=$?; ran /home/vscode/.local/bin/claude
-        as_agent copilot -h >> "$R/out" 2>&1 || rc=$?; ran /usr/local/bin/copilot ;;
+        as_agent copilot -h >> "$R/out" 2>&1 || rc=$?; ran "/usr/local/bin/copilot --no-auto-update -h"; no_update ;;
     wrapper-caps-held)
         # Root in this container still holds SETUID, SETGID and others.
         env PATH="$AGENT_PATH" claude -p probe > "$R/out" 2>&1 || rc=$?; refused "while holding capabilities" ;;
@@ -164,11 +179,20 @@ case "$SC" in
     copilot-bare)
         as_agent copilot -p probe > "$R/out" 2>&1 || rc=$?; refused "REFUSED (finding E5): copilot cannot start before" ;;
     copilot-guarded)
-        as_agent copilot -p probe > "$R/out" 2>&1 || rc=$?; ran "/usr/local/bin/copilot -p probe" ;;
+        as_agent copilot -p probe > "$R/out" 2>&1 || rc=$?; ran "/usr/local/bin/copilot --no-auto-update -p probe"; no_update ;;
+    copilot-pkg-wrapper)
+        # Refused even for --version, which run-copilot's banner calls.
+        as_agent copilot --version > "$R/out" 2>&1 || rc=$?; refused "REFUSED (finding N5): copilot cannot start while a package cache exists" ;;
+    copilot-pkg-launcher)
+        as_agent COPILOT_GITHUB_TOKEN=github_pat_p3_synthetic_fixture bash /usr/local/bin/run-copilot -p probe \
+            > "$R/out" 2>&1 || rc=$?
+        refused "REFUSED (finding N5): /home/vscode/.copilot/pkg exists"
+        [ ! -e "$R/sudo-calls" ] || die "firewall called before the package-cache refusal" ;;
     copilot-launcher)
         as_agent COPILOT_GITHUB_TOKEN=github_pat_p3_synthetic_fixture bash /usr/local/bin/run-copilot -p probe \
             > "$R/out" 2>&1 || rc=$?
-        ran "/usr/local/bin/copilot --allow-all-tools --disable-builtin-mcps"
+        ran "/usr/local/bin/copilot --no-auto-update --allow-all-tools --disable-builtin-mcps"; no_update
+        grep -q "^/usr/local/bin/copilot --no-auto-update --version$" "$R/cli-log" || die "banner did not pass --no-auto-update"
         # No network here, so this is also the static CIDR fallback path.
         grep -Fq "using static CIDR fallback" "$R/out" || die "CIDR fallback not taken"
         grep -Fq "140.82.112.0/20" "$R/sudo-calls" || die "fallback CIDRs not passed to the lockdown" ;;

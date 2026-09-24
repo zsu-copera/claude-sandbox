@@ -33,10 +33,11 @@ SCENARIOS=(
     agent-project-symlink agent-claude-dir-symlink agent-settings-local agent-mcp-json
     agent-user-hooks agent-user-statusLine agent-user-apiKeyHelper agent-user-env agent-user-sandbox
     agent-user-unparseable agent-user-array agent-remote-permissive
-    agent-claudejson-top agent-claudejson-project agent-claudejson-unparseable
+    agent-claudejson-top agent-claudejson-project agent-claudejson-unparseable agent-claudejson-fifo
+    agent-workspace-git agent-workspace-git-dir
     wrapper-bare wrapper-bare-version wrapper-version-plus-args wrapper-lock-not-root
     wrapper-lock-symlink wrapper-lock-dir wrapper-caps-held wrapper-guarded wrapper-unknown-name
-    copilot-bare copilot-guarded copilot-launcher baked-layout
+    copilot-bare copilot-guarded copilot-launcher copilot-pkg-wrapper copilot-pkg-launcher baked-layout
 )
 NAME="p3-startup-${UID}-${BASHPID}-${RANDOM}"
 ACTIVE=""
