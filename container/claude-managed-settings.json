@@ -1,0 +1,39 @@
+{
+    "permissions": {
+        "deny": [
+            "Bash(git push)",
+            "Bash(git push *)",
+            "Read(//workspace/.secrets/**)",
+            "Read(//home/vscode/.claude/**)",
+            "Edit(//home/vscode/.claude/**)",
+            "Edit(//workspace/.claude/**)",
+            "Edit(//workspace/.mcp.json)"
+        ]
+    },
+    "allowManagedPermissionRulesOnly": true,
+    "allowManagedHooksOnly": true,
+    "allowManagedMcpServersOnly": true,
+    "allowedMcpServers": [],
+    "strictKnownMarketplaces": [],
+    "sandbox": {
+        "enabled": true,
+        "failIfUnavailable": true,
+        "allowUnsandboxedCommands": false,
+        "bwrapPath": "/usr/bin/bwrap",
+        "enableWeakerNestedSandbox": false,
+        "enableWeakerNetworkIsolation": false,
+        "filesystem": {
+            "allowWrite": [
+                "/tmp"
+            ],
+            "allowManagedReadPathsOnly": true
+        },
+        "network": {
+            "allowedDomains": [
+                "api.anthropic.com"
+            ],
+            "allowManagedDomainsOnly": true,
+            "strictAllowlist": true
+        }
+    }
+}

@@ -308,7 +308,10 @@ fi
 # --- 3. Sandbox agent instructions + Claude settings + container definition ---
 cp "$SCAFFOLD/overlay/CLAUDE.md" "$SANDBOX_ROOT/CLAUDE.md"
 cp "$SCAFFOLD/overlay/CLAUDE.md" "$SANDBOX_ROOT/AGENTS.md"   # Copilot CLI reads AGENTS.md
-cp -r "$SCAFFOLD/overlay/.claude" "$SANDBOX_ROOT/.claude"
+# One canonical project settings file: the image bakes the same file and run-agent refuses a
+# workspace copy that differs (finding N5). The mandatory policy is the image's managed file.
+mkdir -p "$SANDBOX_ROOT/.claude"
+cp "$SCAFFOLD/container/claude-project-settings.json" "$SANDBOX_ROOT/.claude/settings.json"
 cp -r "$SCAFFOLD/.devcontainer" "$SANDBOX_ROOT/.devcontainer"
 cp -r "$SCAFFOLD/container" "$SANDBOX_ROOT/container"
 cp "$SCAFFOLD/dockerignore" "$SANDBOX_ROOT/.dockerignore"

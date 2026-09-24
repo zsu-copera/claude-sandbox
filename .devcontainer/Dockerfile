@@ -129,15 +129,44 @@ RUN sed -i 's/\r$//' /usr/local/lib/copilot-guard/guard-shell-command.js \
     && chmod 0755 /usr/local/lib/copilot-guard/guard-shell-command.js \
     && node --check /usr/local/lib/copilot-guard/guard-shell-command.js
 
-# Claude Code BASELINE (native installer; autoupdate disabled — runtime firewall
-# would block it). prepare-sandbox re-installs the latest CLI and stages it on
-# /workspace/.agent-cli each sandbox setup; run-agent prefers that copy — this
-# baked one is only the fallback, so image rebuilds are NOT needed for new
-# CLI versions or models.
+# Claude Code's mandatory policy (findings E2/E3). Managed settings outrank user and
+# project settings and carry the locks those scopes cannot undo (managed-only permission
+# rules, hooks and MCP servers; sandbox required, no unsandboxed escape). The agent must
+# not be able to write any of it: root-owned, not group/world-writable, and an EMPTY
+# root-owned drop-in directory so nothing else can supply a fragment. A file that does
+# not parse makes the CLI refuse to start. claude-project-settings.json is the canonical
+# /workspace/.claude/settings.json that run-agent compares the workspace copy against (N5).
+COPY container/claude-managed-settings.json /etc/claude-code/managed-settings.json
+COPY container/claude-project-settings.json /usr/local/share/pera-sandbox/claude-project-settings.json
+RUN sed -i 's/\r$//' /etc/claude-code/managed-settings.json \
+        /usr/local/share/pera-sandbox/claude-project-settings.json \
+    && mkdir -p /etc/claude-code/managed-settings.d \
+    && chown -R root:root /etc/claude-code /usr/local/share/pera-sandbox \
+    && chmod 0755 /etc/claude-code /etc/claude-code/managed-settings.d /usr/local/share/pera-sandbox \
+    && chmod 0644 /etc/claude-code/managed-settings.json \
+        /usr/local/share/pera-sandbox/claude-project-settings.json \
+    && jq empty /etc/claude-code/managed-settings.json \
+        /usr/local/share/pera-sandbox/claude-project-settings.json
+
+# Guarded startup (finding E5): root-owned `claude` / `copilot` wrappers first on PATH
+# refuse to start an agent CLI before lockdown or while capabilities are held, then exec
+# the baked binary. One script; it dispatches on the name it was invoked as.
+COPY container/agent-cli-guard.sh /usr/local/lib/pera-sandbox/bin/claude
+RUN sed -i 's/\r$//' /usr/local/lib/pera-sandbox/bin/claude \
+    && ln -s claude /usr/local/lib/pera-sandbox/bin/copilot \
+    && chown -R root:root /usr/local/lib/pera-sandbox \
+    && chmod 0755 /usr/local/lib/pera-sandbox /usr/local/lib/pera-sandbox/bin \
+        /usr/local/lib/pera-sandbox/bin/claude
+
+# Claude Code (native installer; autoupdate disabled — the runtime firewall would block
+# it). This baked CLI is the only one the launchers run (finding N5, decision A): a copy
+# on the workspace would be agent-writable and persist into the next session. New CLI
+# versions and models therefore need an image rebuild.
 USER vscode
 RUN curl -fsSL https://claude.ai/install.sh | bash
 # CLAUDE_CONFIG_DIR: keep ALL login/config state (incl. .claude.json, which otherwise
 # lives at ~/.claude.json in the ephemeral container fs) inside the mounted
 # pera-claude-config volume, so auth survives container exits.
-ENV PATH=/home/vscode/.local/bin:$PATH \
+# The wrapper directory must stay ahead of ~/.local/bin (verify-scaffold S25).
+ENV PATH=/usr/local/lib/pera-sandbox/bin:/home/vscode/.local/bin:$PATH \
     CLAUDE_CONFIG_DIR=/home/vscode/.claude

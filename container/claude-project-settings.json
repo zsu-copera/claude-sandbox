@@ -10,7 +10,6 @@
     },
     "sandbox": {
         "enabled": true,
-        "failIfUnavailable": false,
         "filesystem": {
             "allowWrite": [
                 "/tmp"
