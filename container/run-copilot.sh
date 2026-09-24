@@ -73,8 +73,10 @@ fi
 # fallback covers a failed fetch. The regional /32s in meta change over time —
 # do not hand-maintain them.
 FALLBACK_CIDRS="140.82.112.0/20 143.55.64.0/20 192.30.252.0/22 185.199.108.0/22"
+# `|| true`: under set -e and pipefail a failed fetch otherwise exits the launcher here
+# (curl's status, e.g. 6) and the fallback below never runs (found by verify-startup.sh).
 GITHUB_CIDRS=$(curl -s -m 10 https://api.github.com/meta 2>/dev/null \
-    | jq -r '(.web + .api)[]? | select(contains(":") | not)' 2>/dev/null | sort -u | tr '\n' ' ')
+    | jq -r '(.web + .api)[]? | select(contains(":") | not)' 2>/dev/null | sort -u | tr '\n' ' ') || true
 if [ -z "${GITHUB_CIDRS// /}" ]; then
     echo "==> WARN: could not fetch api.github.com/meta — using static CIDR fallback"
     GITHUB_CIDRS="$FALLBACK_CIDRS"
