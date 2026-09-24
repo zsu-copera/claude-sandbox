@@ -5,7 +5,7 @@
 > **Security status:** the current work list is
 > [Open items in SECURITY-REVIEW.md](SECURITY-REVIEW.md#open-items-as-of-2026-09-23).
 > To update an existing sandbox's image, follow the
-> [existing-sandbox update procedure](QUICKSTART.md#update-the-firewall-without-resetting-the-workspace).
+> [existing-sandbox update procedure](QUICKSTART.md#update-the-image-without-resetting-the-workspace).
 
 Runs a coding agent **autonomously** inside an isolated container that holds a disposable
 copy of both repos. Two entrypoints share one image and one prepared workspace:
@@ -29,17 +29,25 @@ CLI, `--allow-all-tools`). Isolation layers:
    the first lockdown committed to — a later `lockdown <other-domains>` is ignored.
    Firewall operations are serialized. Refresh stages a replacement allowlist without
    flushing live rules; an interrupted initial installation also prevents reopening.
-3. **Agent-native guardrails** — Claude: settings deny rules and a configured bubblewrap
-   sandbox, with unresolved writable-policy and unsandboxed-fallback findings E2/E3;
-   Copilot: deny-tool/deny-url flags, built-in GitHub MCP disabled, and a root-owned
+3. **Agent-native guardrails** — Claude: a root-owned **managed policy**
+   (`/etc/claude-code/managed-settings.json`) that requires the bubblewrap sandbox with
+   no unsandboxed fallback, carries the deny rules, and locks out lower-scope permission
+   rules, hooks and MCP servers (findings E2/E3). Copilot: deny-tool/deny-url flags,
+   built-in GitHub MCP disabled, and a root-owned
    **policy hook** with known matching gaps. Both agents run
    without `CAP_NET_ADMIN`, so neither can touch the firewall
    directly, and sudo is scoped to `init-firewall.sh` rather than `ALL`.
+4. **Guarded, checked startup** — root-owned `claude` / `copilot` wrappers refuse to
+   start an agent before lockdown or while capabilities are held (E5); `run-agent`
+   refuses when a previous session left the workspace or config volume a looser policy;
+   and only the image-baked CLIs run (N5).
 
 The required workflow is **local commits only**: the sandbox repos have no remotes,
 common push commands are deny-ruled, and a human reviews and pushes from Windows.
 These controls do not prove that every equivalent command or subprocess upload is
-blocked. E1, E6 and N4 are deployed; E2/E3, E5 and N1 remain open.
+blocked. E1, E6 and N4 are deployed. E2/E3, E5 and N5 are implemented in source (Phase 3)
+and count as deployed only after the rebuilt image passes the live checks in
+[the Phase 3 spec](design/phase3-inner-sandbox-and-startup.md#6-verification-plan); N1 remains open.
 
 **Review model in one sentence:** the bind-mounted `~/pera-sandbox` is the intended
 review channel — a disposable copy whose contents are inert data until a human
@@ -122,7 +130,7 @@ wsl -d centos-9 -- bash /mnt/c/work/pera/claude-sandbox/new-sandbox.sh --force
 
 Clones `prj` + `Documentation` from the local Windows working copies (committed state of the
 current branch — no SSH keys, LF endings), overlays the git-ignored AI assets
-(`prj/.github`, `prj/.agents`), drops in the sandbox `CLAUDE.md` + `.claude/settings.json`,
+(`prj/.github`, `prj/.agents`), drops in the sandbox `CLAUDE.md` + the canonical `.claude/settings.json`,
 stages the corp CAs, and copies `~\.m2\settings.xml` + `~\.npmrc` into `.secrets/`
 (purged before the agent runs). The Windows profile is resolved through WSL interop and
 the commit identity comes from WSL git config, written per-repo; neither has a built-in
@@ -154,7 +162,7 @@ Existing running containers are never updated in place.
 
 For E1, use the reviewed branch's Dockerfile and all three changed runtime scripts,
 not just `init-firewall.sh`. Follow the
-[existing-sandbox update procedure](QUICKSTART.md#update-the-firewall-without-resetting-the-workspace)
+[existing-sandbox update procedure](QUICKSTART.md#update-the-image-without-resetting-the-workspace)
 to retain a warmed workspace. A firewall-only update does not itself require another
 prepare; changed build inputs or newly requested Maven profiles may.
 
@@ -168,7 +176,7 @@ script argument instead (the script rejects that with a pointed error):
 ```bash
 podman run -d --name pera-prepare --userns=keep-id --cap-add=NET_ADMIN --cap-add=NET_RAW \
   -e PREPARE_PROFILES="agencyWWW,memberWWW" \
-  -v ~/pera-sandbox:/workspace -v pera-claude-config:/home/vscode/.claude \
+  -v ~/pera-sandbox:/workspace \
   -w /workspace pera-sandbox prepare-sandbox
 # note: vendorintra / intra additionally pull in the itools module — warm those
 # profiles explicitly if the task needs them
@@ -177,8 +185,9 @@ podman run -d --name pera-prepare --userns=keep-id --cap-add=NET_ADMIN --cap-add
 ```bash
 podman run -d --name pera-prepare --userns=keep-id \
   --cap-add=NET_ADMIN --cap-add=NET_RAW \
-  -v ~/pera-sandbox:/workspace -v pera-claude-config:/home/vscode/.claude \
+  -v ~/pera-sandbox:/workspace \
   -w /workspace pera-sandbox prepare-sandbox
+# No agent login volume: prepare runs repository build scripts with the network open.
 podman logs -f pera-prepare        # watch; exits when done
 podman rm pera-prepare             # after it exits, so a re-run can reuse the name
 ```
@@ -198,11 +207,18 @@ podman run -it --name pera-agent --rm --userns=keep-id \
 #                --output-format stream-json --verbose
 ```
 
-`run-agent` locks the firewall (Anthropic-only; self-tests that api.anthropic.com is
-reachable AND example.com is refused — refuses to start otherwise), purges `.secrets/` and
-`~/.npmrc`, schedules allowlist IP refreshes every 15 min, then starts
-`claude --dangerously-skip-permissions`. First ever run: complete the login flow (auth
-persists in the `pera-claude-config` volume) and confirm the bypass prompt.
+`run-agent` first checks the inputs that persist between sessions (finding N5): the
+workspace's `.claude/settings.json` must equal the canonical copy, no
+`settings.local.json` or `.mcp.json` may exist, and the config volume's user settings,
+server-managed settings cache and `.claude.json` may not add commands, hooks or MCP
+servers. Any change refuses with exit 78 before the network is touched (recovery:
+[QUICKSTART](QUICKSTART.md#startup-refusals)). It then locks the firewall (Anthropic-only;
+self-tests that api.anthropic.com is reachable AND example.com is refused — refuses to
+start otherwise), purges `.secrets/` and `~/.npmrc`, schedules allowlist IP refreshes
+every 15 min, then starts `claude --dangerously-skip-permissions` through the guarded
+wrapper. The mandatory policy comes from the image's managed settings, which outrank
+everything the agent can write. First ever run: complete the login flow (auth persists
+in the `pera-claude-config` volume) and confirm the bypass prompt.
 
 **Firewall refresh and recovery:** the initial installation creates the default-deny
 rules and pins both the domain list and the selected backend. Later refreshes keep those
@@ -308,8 +324,9 @@ and cannot be disabled through `disableAllHooks`, but equivalent commands and sc
 indirection still evade its matching. Hook timeouts can fail open. Removing remotes
 does not prevent an explicit destination either.
 
-Claude's address allowlist is narrower, but its unresolved inner-sandbox findings also
-matter before unattended use. Stronger guarantees require a separately reviewed
+Claude's address allowlist is narrower. Its inner-sandbox findings (E2/E3, and E5/N5)
+are implemented in source but not yet observed on a rebuilt image, which also matters
+before unattended use. Stronger guarantees require a separately reviewed
 network/credential design; adding command regexes is not sufficient. See
 [E2-E6 and N1/N2](SECURITY-REVIEW.md#security-findings). GitHub branch protection and
 PR requirements remain useful backstops, not protection for every possible write path.
@@ -359,10 +376,18 @@ separate decisions.
   later lockdowns reuse it and ignore their arguments. The 15-min refresh loop is
   unaffected — each container's domain set is fixed before its first
   lockdown. To get an open network again, start a fresh container.
-- **`/tmp` is writable inside the native sandbox** (`sandbox.filesystem.allowWrite`).
-  Required, not incidental: Java ignores `$TMPDIR`, so `java.io.tmpdir` stays `/tmp` and
-  the WAR assembly fails on a read-only `/tmp`. This necessary allowance does not
-  resolve the writable-policy or unsandboxed-fallback findings E2/E3.
+- **`/tmp` is writable inside the native sandbox** (`sandbox.filesystem.allowWrite` in the
+  managed policy). Required, not incidental: Java ignores `$TMPDIR`, so `java.io.tmpdir`
+  stays `/tmp` and the WAR assembly fails on a read-only `/tmp`.
+- **Why the startup checks exist (N5).** Managed settings win for single values, but
+  list settings merge from every scope, and the CLI has no managed-only lock for
+  `sandbox.excludedCommands` or `allowWrite`. A project `allowWrite` was observed to
+  widen sandboxed writes past the managed policy ([spec §10](design/phase3-inner-sandbox-and-startup.md#10-live-observations-on-a-test-image-2026-09-24)).
+  User settings may also set command-running keys such as `statusLine` or `apiKeyHelper`.
+  The workspace and config volume are agent-writable and persist, so `run-agent`
+  checks them, and a managed `Edit` deny keeps the agent's file tools off both stores.
+- **CLI updates are image rebuilds.** The launchers run only the baked CLIs: a copy on
+  the workspace would be agent-writable and carry into the next session.
 - **Sudo is scoped to `init-firewall.sh`.** Not `NOPASSWD:ALL` — that would have made the
   agent effectively root, able to flush the firewall or read past the settings deny rules.
   Any new call site must use the absolute path, since `Defaults secure_path` excludes
@@ -391,14 +416,16 @@ separate decisions.
 | `.devcontainer/{devcontainer.json,Dockerfile}` | Container definition (CentOS Stream 9) |
 | `container/init-firewall.sh` | Serialized `open` \| `lockdown [domains...]`; durable one-way state, staged refresh, REJECT |
 | `container/prepare.sh` → `prepare-sandbox` | Warm caches via Nexus with network open |
-| `container/run-agent.sh` → `run-agent` | Lockdown (Anthropic) → purge creds → start Claude |
+| `container/run-agent.sh` → `run-agent` | Check persistent inputs (N5) → lockdown (Anthropic) → purge creds → start Claude |
+| `container/claude-managed-settings.json` → `/etc/claude-code/managed-settings.json` | Claude's mandatory policy: sandbox required, deny rules, lower scopes locked (E2/E3); root-owned, empty drop-in directory |
+| `container/claude-project-settings.json` | Canonical `/workspace/.claude/settings.json`: bypass mode plus a repeat of the managed deny rules and sandbox lists, inert under the managed policy; assembly copies it, the image bakes it for `run-agent` to compare |
+| `container/agent-cli-guard.sh` → `/usr/local/lib/pera-sandbox/bin/{claude,copilot}` | Guarded wrappers first on `PATH`: refuse before lockdown or with capabilities held, then exec the baked CLI (E5) |
 | `container/run-copilot.sh` → `run-copilot` | Refuse a non-PAT/missing token or stored sign-in token (N3) → lockdown (Copilot hosts) → purge creds → start Copilot CLI |
 | `container/copilot-settings.json` | First-run default model settings (claude-opus-5.5, high effort, long context) for `~/.copilot` |
 | `container/copilot-policy.json` → `/etc/github-copilot/policy.d/10-guardrails.json` | Machine-policy `preToolUse` hook registration (root-owned; survives `disableAllHooks`) |
 | `container/guard-shell-command.js` | Selected command-pattern vetoes; known matching gaps, not a complete no-push boundary |
 | `container/certs/` | (generated) corp root CAs staged by new-sandbox.sh |
 | `overlay/CLAUDE.md` | Sandbox-adapted instructions the agent boots with |
-| `overlay/.claude/settings.json` | bypassPermissions + deny rules + native sandbox |
 | `sandbox-record.sh` | Optional WSL-host PTY recorder around an explicitly approved guarded launch; private output/timing, outcomes and hashes |
 | `verify-recording.sh` | Disposable local PTY checks for recording, signals, exit propagation and retention; no agent/container |
 | `verify-scaffold.sh` | Host-side static assertions |
@@ -407,6 +434,8 @@ separate decisions.
 | `VERIFY-ASSERTIONS.md` | Implemented checks, planned lifecycle assertions and coverage limits |
 | `sandbox-round.sh`, `tools/rounds/rounds.js` | Operator-only export/preview/apply/recover for append-only committed brief snapshots |
 | `verify-assembly.sh` | Disposable `new-sandbox.sh` assembly and reset-safety regressions (V2, D5, I1), in a throwaway tree under `$HOME` |
+| `verify-startup.sh`, `tests/startup/` | Disposable `--network=none` regressions for `run-agent`'s input checks and the guarded wrappers (N5, E5), with a recorder in place of the real CLIs; `--baked` checks a rebuilt image's copies |
+| `design/` | Written specs for owner review, e.g. the Phase 3 inner-sandbox and startup spec |
 | `verify-rounds.sh`, `tests/rounds/` | Disposable round-import and recovery regressions |
 | `sandbox-task.sh`, `tools/tasks/` | Registered task plans, checked launch-handoff text, status and audit collection; no automatic agent launch |
 | `OPERATOR.md` | Outside-agent procedure, approval rules and audit boundaries |

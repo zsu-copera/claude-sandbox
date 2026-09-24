@@ -105,9 +105,26 @@ before touching the code.
   is credentialed and gets purged by design.
 - **`run-agent` / `run-copilot` purge credentials after locking down, not before**, and refuse
   to start if the firewall self-test fails.
-- **`sandbox.filesystem.allowWrite: ["/tmp"]`** in `overlay/.claude/settings.json` is required,
-  not incidental: Java ignores `$TMPDIR`, so `java.io.tmpdir` stays `/tmp` and the WAR assembly
-  fails on a read-only `/tmp`.
+- **`sandbox.filesystem.allowWrite: ["/tmp"]`** in `container/claude-managed-settings.json`
+  is required, not incidental: Java ignores `$TMPDIR`, so `java.io.tmpdir` stays `/tmp` and
+  the WAR assembly fails on a read-only `/tmp`.
+- **Claude's mandatory policy is managed settings (E2/E3).** The Dockerfile installs it
+  root-owned at `/etc/claude-code/managed-settings.json` with an empty root-owned
+  `managed-settings.d/`. It requires the sandbox (`failIfUnavailable`,
+  `allowUnsandboxedCommands: false`), holds the deny rules and locks out lower-scope
+  permission rules, hooks and MCP servers. The project settings are fixed: bypass mode plus a
+  repeat of the managed deny rules and sandbox lists, for an image without the policy
+  (spec §9, D-9). S10 asserts both files exactly.
+- **`run-agent` checks the next session's inputs before lockdown (N5).** Lists merge
+  across scopes and nothing locks `excludedCommands` or `allowWrite`, so the workspace
+  `.claude/`, `.mcp.json` and the config volume's user settings, `remote-settings.json`
+  and `.claude.json` are checked and a change refuses with exit 78. The user-settings
+  allowlist is a reviewed decision; do not widen it to make a launch pass.
+- **Only the image-baked CLIs run (N5, decision A).** Do not reintroduce a workspace-staged
+  or otherwise agent-writable CLI; a CLI update is an image rebuild.
+- **Guarded wrappers (E5).** Root-owned `claude` / `copilot` wrappers first on the image
+  `PATH` refuse before lockdown or with capabilities held. They guard operator mistakes,
+  not the agent. S25/S26 and `verify-startup.sh` cover this and the previous two items.
 - **`gh` is deliberately not installed** in the image, and the Copilot entrypoint's
   `--deny-tool` / `--deny-url` / `--disable-builtin-mcps` flags remain required
   defense-in-depth for reachable GitHub ranges. They and the policy hook have documented
@@ -126,7 +143,7 @@ cheapest rung that actually covers your change.
 1. **Static checks — no container.** Run `./verify-scaffold.sh`. It checks line endings, shell
    syntax, JSON validity, the absence of personal paths, and that every isolation invariant
    above is still present in the source. **Run it after every edit**, and expect a clean run to
-   report `22 passed, 0 failed, 2 skipped` — S3 and S20 skip without shellcheck and
+   report `24 passed, 0 failed, 2 skipped` — S3 and S20 skip without shellcheck and
    VERSION. S7 has passed since I1/I2 were fixed on 2026-09-23. Any failure is yours. S11/S12 check source structure, not runtime containment.
 2. **Container, already built.** An image (`localhost/pera-sandbox`) and an assembled, warmed
    sandbox (`~/pera-sandbox` inside the `centos-9` WSL distro) already exist, so in-container
@@ -137,7 +154,10 @@ cheapest rung that actually covers your change.
    `bash verify-rounds.sh` covers round imports with disposable repositories; do not
    exercise failure recovery against a real task workspace. `bash verify-assembly.sh`
    covers `new-sandbox.sh` assembly and `--force` reset safety in a throwaway tree; never
-   test `--force` against a real workspace.
+   test `--force` against a real workspace. `bash verify-startup.sh` covers `run-agent`'s
+   input checks and the guarded wrappers with a recorder in place of the real CLIs;
+   `--baked` checks a rebuilt image's own copies. It does not show what the CLI itself
+   does with the managed policy; that needs the live checks in the Phase 3 spec (§6).
 3. **Packaging / prepare.** Dockerfile or image-installed script/policy changes require
    a refreshed build context, rebuilt image and new container for deployment. An image
    rebuild does not automatically require another prepare of an existing warmed workspace;

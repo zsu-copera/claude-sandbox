@@ -24,9 +24,7 @@ settings-precedence work is not delegable without review):
 
 | Item | What is needed |
 |---|---|
-| E2/E3, Claude inner sandbox | Make mandatory policy non-writable by the agent, for example root-owned `/etc/claude-code/managed-settings.json`. Set `failIfUnavailable: true` and `allowUnsandboxedCommands: false` together. Observe the effective settings live rather than assuming precedence. Exercise tool calls inside bubblewrap with DNS closed (E6). |
-| E5, startup paths | Refuse agent start outside the wrappers: `claude`/`copilot` shims that require recorded lockdown and dropped capabilities. The devcontainer is declared unsupported for agent work (decided 2026-09-23). `new-sandbox.sh` no longer prints an unguarded shell recipe ([Phase 1](#phase-1-cleanup-2026-09-23)). |
-| N5, next-session inputs | New 2026-09-23. The agent can write the staged CLIs, the project settings and the Claude config volume, and each persists into the next session. Managed settings alone do not lock `excludedCommands`, `allowWrite`, `bwrapPath` or the command-running keys. Addressed together with E2/E3/E5 in the [Phase 3 spec](design/phase3-inner-sandbox-and-startup.md) (draft, awaiting owner review). |
+| E2/E3, E5, N5 | **Implemented in source, not deployed** ([Phase 3](#phase-3-inner-sandbox-and-guarded-startup-2026-09-24), spec approved 2026-09-24). Root-owned managed policy, startup checks of the next session's inputs, baked CLIs only, guarded wrappers. Remaining: the independent review of the diff; the live observations L1–L10 on a derived test image, then on the rebuilt image; one coordinated rebuild. Not deployed until L1–L10 are observed on the rebuilt image. |
 | C5, sign-off | Security/IT sign-off before other developers run unattended. Record it here. |
 
 **Blocking a second developer** (mechanical unless noted):
@@ -39,7 +37,7 @@ settings-precedence work is not delegable without review):
 
 | Item | What is needed |
 |---|---|
-| Next rebuild | Must carry Phase 1's `prepare.sh` and Copilot seed. Until then, prepare a newly assembled workspace only on a rebuilt image: the old `prepare.sh` restores the removed identity default. |
+| Next rebuild | Must carry Phase 1's `prepare.sh` and Copilot seed, and Phase 3. Until then, prepare a newly assembled workspace only on a rebuilt image: the old `prepare.sh` restores the removed identity default. Phase 3's project settings deliberately repeat the old deny rules and sandbox lists (spec §9, D-9), so a workspace assembled after Phase 3 is no weaker than before on the old image, but it gets none of the Phase 3 protections there. |
 
 **Verification gaps on the current image** (first real session after the rebuild):
 - Interactive Copilot and Claude sessions under E6.
@@ -48,8 +46,10 @@ settings-precedence work is not delegable without review):
 - Copilot `/model` on a new volume shows the seeded `claude-opus-5.5` (C3; the dotted ID is inferred from the CLI bundle).
 
 The E6 discovery ran on baked Copilot 1.0.83, while the workspace-staged CLI is 1.0.86. Earlier
-records said 1.0.83 for the staged CLI, and the discrepancy is unexplained. If a CLI stops
-working, run a new names-only discovery; do not reopen DNS.
+records said 1.0.83 for the staged CLI, and the discrepancy is unexplained. After Phase 3
+only the baked CLIs run, and the rebuild installs whatever versions are current at build
+time, so record both versions after the rebuild. If a CLI stops working, run a new
+names-only discovery; do not reopen DNS.
 
 **Closed 2026-09-23 in [Phase 1](#phase-1-cleanup-2026-09-23):** I1, I2, I3, I4, C1, C2, C3, D4.
 **Closed 2026-09-23 in [Phase 2](#phase-2-reset-safety-and-required-assets-2026-09-23):** V2, D5.
@@ -370,7 +370,7 @@ workspace, replace the tagged image, merge `main` or promote the distribution co
 The image ID above was read again during the documentation update and remains unchanged.
 E1 must not be marked resolved for that image merely because the branch has a fix.
 
-Next, complete and record the [existing-sandbox update procedure](QUICKSTART.md#update-the-firewall-without-resetting-the-workspace):
+Next, complete and record the [existing-sandbox update procedure](QUICKSTART.md#update-the-image-without-resetting-the-workspace):
 the selected scaffold revision, refreshed build inputs, new image ID and a guarded
 startup outcome. Recreating a container from the old image is not deployment. Keep
 the original image evidence above rather than rewriting it as evidence for a rebuild.
@@ -651,3 +651,39 @@ already refused.
 Not covered: tags and other non-branch refs, reflog-only commits, and the contents of
 unexpected top-level entries, which are reported but not inspected. Evidence:
 `verify-assembly.sh`, 33 of 33; see `VERIFY-ASSERTIONS.md`.
+
+## Phase 3: inner sandbox and guarded startup, 2026-09-24
+
+Branch `feat/phase3-inner-sandbox-startup`. Spec: [design/phase3-inner-sandbox-and-startup.md](design/phase3-inner-sandbox-and-startup.md),
+approved 2026-09-24 with the recommended option on every decision. Its §9 lists the
+departures (D-1 to D-9). **Implemented in source, not deployed.**
+
+| Finding | Outcome in source |
+|---|---|
+| E2/E3 | `container/claude-managed-settings.json` is baked root-owned to `/etc/claude-code/managed-settings.json`, with an empty root-owned `managed-settings.d/`. It requires the sandbox (`failIfUnavailable`, `allowUnsandboxedCommands: false`, `bwrapPath`, weaker modes off) and holds the deny rules. It locks lower-scope permission rules, hooks and MCP servers (`allowedMcpServers: []`) and keeps network domains managed-only. `allowWrite` stays `["/tmp"]`. S10 now asserts this file. |
+| N5 | The launchers run only the image-baked CLIs; prepare no longer stages CLIs and deletes an old `.agent-cli/`. Before lockdown, `run-agent` refuses (exit 78) when: the project settings differ from the canonical file or the legacy hash; `settings.local.json` or `.mcp.json` exists; the user settings hold a key outside the reviewed allowlist; `remote-settings.json` is anything but `[]`/`{}`; or `.claude.json` configures MCP servers. It unsets the five managed-policy redirect variables. Managed `Edit` denies keep the file tools off both settings stores during a session. |
+| E5 | Root-owned wrappers `/usr/local/lib/pera-sandbox/bin/{claude,copilot}`, first on `PATH`, refuse unless the root-owned lockdown record exists and all four capability sets are empty. Otherwise they exec the baked CLI; `--version`/`--help` alone pass through. The devcontainer is marked unsupported for agent work. |
+
+**Also fixed:** `run-copilot`'s static-CIDR fallback was unreachable: under `set -e` and
+`pipefail`, a failed `api.github.com/meta` fetch exited the launcher (D-8). The prepare
+recipes no longer mount the Claude login volume (D-7).
+
+**Rollout hazard avoided (D-9).** The canonical project settings keep the old deny rules
+and sandbox lists. A workspace assembled from this scaffold but run on the old image is
+therefore no weaker than before, although it gains none of Phase 3.
+
+**Not covered:** instruction files (`CLAUDE.md`, skills, agents) persisting between sessions;
+Copilot's `~/.copilot` configuration; and operator-supplied launcher arguments such as
+`--settings`.
+
+**Live, on a test image** (the current image plus the Phase 3 files, root-owned; spec §10):
+- **L2, L7, L8, L10 pass.** Writes outside `/workspace` and `/tmp` are refused, including
+  with `dangerouslyDisableSandbox`. DNS and egress are closed inside the sandbox. The
+  wrappers refuse. The agent cannot write its project settings from Bash or the Write tool.
+- **L3:** with capabilities held, the CLI still starts and every Bash call fails. Nothing
+  runs unsandboxed, but there is no start-time refusal.
+- **L4c:** a project `allowWrite` **does** merge past the managed policy and widen writes.
+  That confirms N5's premise for lists. A project `excludedCommands` did not escape the
+  sandbox (L4).
+
+These observations are not deployment: they must be repeated on the rebuilt image.

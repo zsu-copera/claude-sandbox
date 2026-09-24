@@ -52,11 +52,11 @@ delegable to a cheaper agent: it needs no container, so an agent can iterate aga
 | S3 | No `shellcheck` errors (warnings allowed) | `shellcheck -S error`, `SKIP` if absent | WARN |
 | S4 | Every path the Dockerfile `COPY`s from `container/` exists | parse `COPY container/...` lines | FAIL |
 | S5 | The Dockerfile's `sed`/`chmod` file lists match its `COPY` list | compare the two sets | FAIL |
-| S6 | Every file `new-sandbox.sh` copies from the scaffold exists (`overlay/CLAUDE.md`, `overlay/.claude`, `.devcontainer`, `container`, `dockerignore`) | existence check | FAIL |
+| S6 | Every file `new-sandbox.sh` copies from the scaffold exists (`overlay/CLAUDE.md`, `container/claude-project-settings.json`, `.devcontainer`, `container`, `dockerignore`) | existence check | FAIL |
 | S7 | No personal path or name anywhere | grep for `/home/su`, `Users/su`, `zsu@`, and any hardcoded human name used as a default value | FAIL |
-| S8 | `overlay/.claude/settings.json` and `container/copilot-settings.json` are valid JSON | `jq empty` | FAIL |
+| S8 | `container/claude-managed-settings.json`, `container/claude-project-settings.json`, `container/copilot-settings.json` and `container/copilot-policy.json` are valid JSON | `jq empty` | FAIL |
 | S9 | `.devcontainer/devcontainer.json` is valid **JSONC** | it contains `//` comments, so plain `jq` fails — strip comments first or use a JSONC parser. A naive `jq empty` here is a false failure | FAIL |
-| S10 | `overlay/.claude/settings.json` still declares `defaultMode: bypassPermissions`, a non-empty `deny` list, and `sandbox.enabled: true` | `jq` | FAIL |
+| S10 | The managed policy (`container/claude-managed-settings.json`) requires the sandbox (`enabled`, `failIfUnavailable`, `allowUnsandboxedCommands: false`, no `excludedCommands`, weaker modes off), keeps `allowWrite` exactly `["/tmp"]`, sets `allowManagedDomainsOnly`, the three `allowManaged*Only` locks and an empty `allowedMcpServers`, carries the push, secrets and settings-store deny rules, and does not set `disableBypassPermissionsMode`; the project settings are exactly the canonical file (bypass mode, the four deny rules, `sandbox.enabled`, `/tmp` and `api.anthropic.com`, and nothing else). Moved from the overlay file in Phase 3 (approved 2026-09-24) | `jq`, or node on the Windows host | FAIL |
 | S11 | Source retains serialized durable/kernel guards and staged refresh, without a permissive flush outside `open` | inspect lock ordering, state checks, ipset swap and chain-jump replacement; runtime proof belongs to `verify-firewall.sh` | FAIL |
 | S12 | Source stages a private domain record, atomically publishes it and reuses the committed list | inspect umask, pending-file publication and pinned-domain reuse; not proof of effective ownership or crash behavior | FAIL |
 | S13 | Both entrypoints drop capabilities before exec'ing the agent | grep for `setpriv --inh-caps=-all --ambient-caps=-all` in `run-agent.sh` and `run-copilot.sh` | FAIL |
@@ -71,6 +71,8 @@ delegable to a cheaper agent: it needs no container, so an agent can iterate aga
 | S22 | Every `container/*` file appears in `README.md`'s Files table | cheap guard against doc drift | WARN |
 | S23 | `container/certs/` is absent or empty | it is generated per machine and must never be committed or shipped | WARN |
 | S24 | Policy-hook packaging and registration fragments remain in source, with optional JavaScript syntax checking | grep COPY/ownership/mode/registration/rule fragments and run `node --check` if available; does not prove effective image permissions, CLI loading, failure behavior or complete command coverage (N2) | FAIL |
+| S25 | The Dockerfile installs the managed policy and canonical project settings root-owned (policy `0644`, empty `managed-settings.d/`), installs `agent-cli-guard.sh` as the `claude` wrapper with a `copilot` link, root-owned, and its final `PATH` starts with the wrapper directory; `run-agent` and `new-sandbox.sh` use the canonical file; the wrapper targets the baked CLIs, checks the root-owned lockdown file and all four capability sets | grep; source structure only, the runtime layout is `verify-startup.sh --baked` | FAIL |
+| S26 | `run-agent.sh` and the wrapper unset the five managed-policy redirects; `run-agent` keeps the reviewed user-settings allowlist verbatim, checks project settings (canonical or legacy hash), `settings.local.json`, `.mcp.json`, `remote-settings.json` and `mcpServers`, before its lockdown call; neither launcher references a workspace-staged CLI | grep and line order; behavior is `verify-startup.sh` | FAIL |
 
 ## P — Post-prepare, network open (`verify-sandbox.sh --post-prepare`)
 
@@ -89,7 +91,7 @@ delegable to a cheaper agent: it needs no container, so an agent can iterate aga
 | P11 | `CHROME_BIN` is set and the binary runs | `"$CHROME_BIN" --version` | FAIL |
 | P12 | Each warmed module has both `node/` and `node_modules/` | derive the module list from the warmed profile; `SKIP` modules outside it and say which | FAIL |
 | P13 | A node dist tarball exists in `.node-cache/` for every pinned version | existence check per version | FAIL |
-| P14 | Agent CLIs were staged | `.agent-cli/claude-local.tgz` and/or `.agent-cli/copilot/bin/copilot`; non-fatal by design, so WARN | WARN |
+| P14 | *(retired in Phase 3)* No agent CLI is staged: `.agent-cli/` is absent after prepare, because the launchers run only the baked CLIs (N5, decision A) | `! -e .agent-cli` | FAIL |
 | P15 | `prj/.github/copilot-instructions.md` and `prj/.agents/skills/agency-jsp-to-angular` are present | these are git-ignored upstream and arrive only via the overlay; their silent absence produces a degraded sandbox | WARN |
 
 ## A — After lockdown, still privileged (`verify-sandbox.sh --pre-agent`)
@@ -1159,19 +1161,80 @@ dirty. The harvested lookup for the real HEAD took about 2 s over the WSL mount 
 it only under `refs/sandbox/JWA-2906-R1`. `--force` was **not** run against the real
 workspace. Static assertions: 22 passed, 0 failed, 2 skipped.
 
+### Inner sandbox and guarded startup (E2/E3, E5, N5), 2026-09-24
+
+New `verify-startup.sh` (run in WSL; needs the existing image; `--network=none`, no
+credential, no workspace): **37 passed, 0 failed, 1 skipped**. `baked-layout` needs
+`--baked` on a rebuilt image. Each scenario runs in its own container. The fixture
+installs the source policy, wrapper and launchers, replaces both real CLIs with a recorder
+and the firewall with a fake sudo, and runs the launcher or wrapper as `vscode` with every
+capability cleared.
+
+- **`run-agent` starts, with arguments preserved,** on the legacy project settings, the
+  canonical copy and no project settings. In each case the five redirect variables are
+  absent in the CLI, its capability sets are zero, lockdown ran first and the credentials
+  were purged.
+- **`run-agent` refuses with exit 78, before any firewall call and with credentials
+  intact,** for 22 tampered inputs:
+  - project settings adding `excludedCommands`, `allowWrite: ["/"]`, `bwrapPath`, a hook,
+    `statusLine` or `apiKeyHelper`;
+  - project settings with one trailing newline added;
+  - a symlinked settings file, or a symlinked `.claude` directory;
+  - `settings.local.json`, or `.mcp.json`;
+  - user settings with `hooks`, `statusLine`, `apiKeyHelper`, `env` or `sandbox`;
+  - user settings that do not parse, or that are an array;
+  - a permissive `remote-settings.json`;
+  - `.claude.json` with MCP servers at the top level or under a project, or that does not
+    parse.
+- **The wrappers refuse with exit 78**:
+  - with no lockdown record;
+  - when the record is owned by `vscode`, is a symlink or is a directory;
+  - while running as root with capabilities;
+  - when called as `claude --version -p …`;
+  - under an unknown name.
+- **The wrappers pass through or run:**
+  - `--version` and `-h` pass through;
+  - a guarded `claude` and a guarded `copilot` exec the baked paths, with the variables
+    removed.
+- **`run-copilot`, run end to end through the wrapper,** takes the static-CIDR fallback.
+  Before D-8 it exited 6 there.
+
+Mutation check: broken copies of the scaffold in a WSL temp directory, each run through
+the suite and the static checks.
+
+| Mutation | Caught by |
+|---|---|
+| Wrapper without the environment unset | 4 startup scenarios, S26 |
+| Wrapper without the capability check | `wrapper-caps-held` |
+| Wrapper without the lock-owner check | `wrapper-lock-not-root` |
+| `run-agent` without the user allowlist | 5 scenarios |
+| `run-agent` without the project comparison | 7 scenarios, S26 |
+| `run-agent` without the MCP check | 2 scenarios |
+| `run-agent` checks moved after the lockdown | 22 scenarios, S26 |
+| Managed file with `allowUnsandboxedCommands: true` | S10 |
+| Managed file with a widened `allowWrite` | S10 |
+| Wrapper directory placed after `~/.local/bin` on `PATH` | S25 |
+
+The static checks also passed on the jq path in WSL.
+
+Not shown by any of this: what the Claude CLI does with the managed file. That is the
+spec's live L1–L10. Static assertions: 24 passed, 0 failed, 2 skipped.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is
   closed.
-- **That the agent cannot read its own auth token.** It can, via Bash; the settings deny rule
-  covers the Read tool only. Asserting otherwise would encode a false claim.
+- **That the agent cannot read its own auth token.** Before Phase 3 it could, via Bash; the
+  settings deny rule covered the Read tool only. On the Phase 3 test image, sandboxed Bash
+  sees no `/home/vscode/.claude` at all (spec §10). That was observed once and is not
+  asserted by any check; Copilot sessions have no such sandbox.
 - **Anything requiring the dev AS400/Oracle.** Unreachable by design.
 - **Integration tests.** Same reason.
 
 ## Notes for whoever implements this
 
 - **The S-series is implemented** in `verify-scaffold.sh` (2026-09-09). Since I1/I2 were
-  fixed (2026-09-23): 22 pass, 0 failures, 0 warnings, 2 skips (no shellcheck, no VERSION). Focused firewall coverage does not complete the lifecycle
+  fixed (2026-09-23), and with S25/S26 from Phase 3 (2026-09-24): 24 pass, 0 failures, 0 warnings, 2 skips (no shellcheck, no VERSION). Focused firewall coverage does not complete the lifecycle
   P/A/G/X runner.
 - S1 is the assertion most likely to be written wrongly. Two tools lie here: `grep -c $'\r'`
   can match every line in Git Bash, and `file(1)` omits its CRLF note in some builds. Count

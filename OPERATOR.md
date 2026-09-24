@@ -67,7 +67,7 @@ Before the first ticket run with the chosen CLI/setup, record and demonstrate:
 
 | Check | Required evidence |
 |---|---|
-| Runtime identity | Actual CLI executable/version, provider, observed model or an explicit unknown, image ID, task/plan ID and session/run identifier. A staged CLI can differ from the image copy. |
+| Runtime identity | Actual CLI executable/version, provider, observed model or an explicit unknown, image ID, task/plan ID and session/run identifier. Since Phase 3 only the image-baked CLI runs (an older image may still prefer a workspace-staged copy), so record the version the session actually reports. |
 | Capture method | Exact-version supported session export or host-side capture, destination and owner. A harmless, separately approved non-ticket probe must show what is recorded: tool invocation, result and exit/failure outcome where available. Printed summaries or stdout alone must not be labelled a complete tool transcript. |
 | Retention | Retrieval after the probe session/container ends; selected evidence copied to private host storage outside the workspace and controller-owned records before any reset. Verify per-file hashes and record the association with the run. |
 | Review limits | Whether subagent actions, interactive output, failed commands and exit codes are represented. Record omissions, the responsible human and whether the required review can actually be completed. |

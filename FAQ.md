@@ -64,7 +64,7 @@ Only if it uses an image rebuilt from the updated scaffold files. Assembly copie
 build inputs into `~/pera-sandbox`; building bakes those copies into the image;
 starting a container uses that image. Reusing an old image or stale build context keeps
 the old firewall. Running containers are not updated in place. Follow the
-[E1 update procedure](QUICKSTART.md#update-the-firewall-without-resetting-the-workspace);
+[E1 update procedure](QUICKSTART.md#update-the-image-without-resetting-the-workspace);
 it preserves the workspace and does not require a reset or a new prepare solely for E1.
 
 **Can I switch between Claude and Copilot on the same sandbox?**
@@ -356,16 +356,38 @@ firewall needs landed in the *ambient* set, so bwrap and the firewall were mutua
 exclusive. `run-agent`/`run-copilot` now drop capabilities (`setpriv --inh-caps=-all
 --ambient-caps=-all`) after lockdown and before starting the agent, which fixes bwrap and
 takes `CAP_NET_ADMIN` away from the agent at the same time. That historical check
-established compatibility, not mandatory sandbox enforcement: writable settings and
-unsandboxed fallback remain findings E2/E3 in the security review. E1 does not fix them.
+established compatibility, not mandatory enforcement. Phase 3 makes the sandbox
+mandatory from a root-owned managed policy: `sandbox.failIfUnavailable` refuses to start
+without it and `allowUnsandboxedCommands: false` ignores `dangerouslyDisableSandbox`
+(E2/E3). On a test image both held: a write outside `/workspace` and `/tmp` was refused
+even with `dangerouslyDisableSandbox`. With capabilities still held, the CLI does start,
+but every Bash command fails rather than running unsandboxed. They count as deployed once
+the rebuilt image passes the live checks in the
+[Phase 3 spec](design/phase3-inner-sandbox-and-startup.md#6-verification-plan).
+
+**`run-agent` or `claude` says `REFUSED (finding N5)` or `(finding E5)`. What now?**
+Nothing was changed. E5 means an agent CLI was started outside `run-agent` /
+`run-copilot`. N5 means an input that survives between sessions (the workspace's
+`.claude/` settings, `.mcp.json`, or the config volume's user settings, server-managed
+settings cache or `.claude.json`) would give the next session a looser policy. Treat it as
+something a previous session did until you know otherwise. Inspect and restore it as in
+[QUICKSTART "Startup refusals"](QUICKSTART.md#startup-refusals).
+
+**Why doesn't prepare refresh the agent CLIs any more?**
+It used to stage them on the workspace for the launchers to prefer. The workspace is
+agent-writable and persists, so one session could leave the next a modified CLI that
+ignores every policy (finding N5, decision A of the Phase 3 spec). Only the image-baked
+CLIs run now; a CLI update is an image rebuild. An old workspace's `.agent-cli/` is
+removed by the next prepare and ignored until then.
 
 **A build fails under the native sandbox with "Read-only file system". Why?**
 Java ignores `$TMPDIR`. The sandbox makes only the working directory and a session temp
 directory writable, and points `$TMPDIR` at the latter — but `java.io.tmpdir` defaults to
 `/tmp` regardless, so jansi's native-library extraction and the WAR plugin's staging both
-write to a read-only `/tmp` and the `agency` WAR assembly dies. `overlay/.claude/settings.json`
-therefore sets `sandbox.filesystem.allowWrite: ["/tmp"]`. Don't remove it: without it the
-build fails every time and only recovers if the agent happens to retry unsandboxed.
+write to a read-only `/tmp` and the `agency` WAR assembly dies. The managed policy
+(`container/claude-managed-settings.json`) therefore sets `sandbox.filesystem.allowWrite:
+["/tmp"]`. Don't remove it: without it the build fails every time, and since Phase 3
+there is no unsandboxed retry to recover with.
 
 **Why is the image CentOS and why does everything come from Nexus?**
 Zscaler on this network blocks Debian mirrors, nodejs.org, registry.npmjs.org, and most

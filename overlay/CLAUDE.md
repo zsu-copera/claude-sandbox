@@ -37,6 +37,11 @@ workspace. This file replaces the normal Windows workspace instructions.
   flushing live rules. If a refresh fails, report the error; do not widen the allowlist,
   delete `/run/claude-firewall` or `/run/claude-lockdown-domains`, try to change the
   pinned `/etc/hosts` block, or attempt to reopen networking. Incomplete initialization requires a human to start a fresh container.
+- **Do not alter the agent configuration.** Leave `/workspace/.claude/`, `/workspace/.mcp.json`
+  and `~/.claude/` alone, and do not try to turn off or get around the command sandbox. The
+  policy is root-owned and the next session refuses to start if these files change. Claude
+  Code runs Bash commands in a sandbox that can write only to `/workspace` and `/tmp`. If a
+  command fails because of it, report the failure rather than working around it.
 - **Unit tests only.** Integration tests need the PERA AS400/Oracle databases, which are
   unreachable here **by design**. Never pass `-Drun.integration.tests=true`. If something can
   only be verified against a live DB or deployed server, record it in the ticket's

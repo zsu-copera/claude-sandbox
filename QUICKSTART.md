@@ -65,15 +65,16 @@ podman build --secret id=npmrc,src=.secrets/npmrc -t pera-sandbox -f .devcontain
 Build time depends on which layers are invalidated. Rebuild when the Dockerfile or
 any image-installed file changes, including the firewall, launchers or policy hook.
 The build uses the copies in `~/pera-sandbox`, not the working scaffold directly.
-Agent CLIs
-(Claude Code, Copilot) are refreshed to latest during `prepare-sandbox`, so new CLI
-versions and newly released models do **not** require an image rebuild.
+The agent CLIs (Claude Code, Copilot) are the ones baked into the image, installed at
+their latest versions when it is built, and the launchers run nothing else (finding N5):
+a CLI copy on the workspace would be agent-writable. **A new CLI version is an image
+rebuild.** Newly released models usually are not, if the baked CLI already offers them.
 
 ### 3. Warm the build caches — network open, one-time per sandbox
 
 ```bash
 podman run -d --name pera-prepare --userns=keep-id --cap-add=NET_ADMIN --cap-add=NET_RAW \
-  -v ~/pera-sandbox:/workspace -v pera-claude-config:/home/vscode/.claude \
+  -v ~/pera-sandbox:/workspace \
   -w /workspace pera-sandbox prepare-sandbox
 
 podman logs -f pera-prepare     # wait for "BUILD SUCCESS" ... "Prepare complete."
@@ -81,7 +82,9 @@ podman rm pera-prepare          # once it has exited; a re-run needs the name fr
 ```
 
 ~10–30 min. Downloads everything the locked-down agent will need: Maven deps, the pinned
-node versions (assembled via Nexus), and npm packages.
+node versions (assembled via Nexus), and npm packages. Prepare deliberately mounts no
+agent login volume: it runs the repositories' build scripts with the network open, and
+since the CLIs are no longer refreshed here it has no use for one.
 
 **Container names belong to one workspace (finding I4).** `pera-prepare`, `pera-agent`
 and `pera-copilot` in these commands are for the default workspace `~/pera-sandbox`.
@@ -98,7 +101,7 @@ the script rejects that loudly). Full command:
 ```bash
 podman run -d --name pera-prepare --userns=keep-id --cap-add=NET_ADMIN --cap-add=NET_RAW \
   -e PREPARE_PROFILES="memberWWW" \
-  -v ~/pera-sandbox:/workspace -v pera-claude-config:/home/vscode/.claude \
+  -v ~/pera-sandbox:/workspace \
   -w /workspace pera-sandbox prepare-sandbox
 
 podman logs -f pera-prepare     # wait for "BUILD SUCCESS" ... "Prepare complete."
@@ -354,19 +357,58 @@ reset. Do not delete Git locks or private recovery files to bypass the guard.
 The tool does not start an agent, enforce the internal reviewer loop or harvest
 results. Those remain explicit steps; a completed import is not task acceptance.
 
-## Update the firewall without resetting the workspace
+## Startup refusals
 
-For the E1 update, the sequence is **reviewed scaffold -> refreshed build context ->
+Both refusals exit 78 and change nothing; the message names the finding and the file.
+
+- **`REFUSED (finding E5)`**: `claude` or `copilot` was started outside `run-agent` /
+  `run-copilot`, for example from `podman exec`, a bare shell, or the devcontainer
+  (unsupported for agent work). The wrappers require a locked-down container and no
+  capabilities. Start the agent with the step-4 command. `--version` and `--help` always work.
+- **`REFUSED (finding N5)`**: an input that persists between sessions is not what the
+  image expects, so the next session would inherit a looser policy. A previous agent
+  session or a manual edit made the change. Treat it as a review finding, not a nuisance:
+  read the file as data (never execute it), check the last session's review record, and
+  note what you found before restoring. Do not start the CLI some other way to get past it.
+  - **Workspace** (`~/pera-sandbox/.claude/settings.json`, `.claude/settings.local.json`,
+    `.mcp.json`): restore the canonical file and remove the others, inside WSL:
+    `cp --remove-destination /mnt/c/work/pera/claude-sandbox/container/claude-project-settings.json ~/pera-sandbox/.claude/settings.json`
+  - **Config volume** (`settings.json`, `remote-settings.json`, `.claude.json`): the
+    volume is reachable only through a container, so inspect and repair it in a
+    disposable one with no network. Do not copy the volume elsewhere.
+
+    ```bash
+    podman run --rm -it --network=none --userns=keep-id --entrypoint bash \
+      -v pera-claude-config:/home/vscode/.claude pera-sandbox
+    # then, for the file the refusal named:
+    jq . ~/.claude/settings.json                     # inspect; delete only the named keys, e.g.
+    f=~/.claude/settings.json; jq 'del(.statusLine)' "$f" > "$f.new" && mv "$f.new" "$f"
+    rm ~/.claude/remote-settings.json                # a server-managed cache; the org sets none today
+    f=~/.claude/.claude.json; jq 'walk(if type == "object" then del(.mcpServers) else . end)' "$f" > "$f.new" && mv "$f.new" "$f"
+    ```
+  - A user setting you actually want that is not on the allowlist (`model`,
+    `effortLevel`, `theme`, `tui`, `skipDangerousModePermissionPrompt`, `outputStyle`,
+    `language`, `viewMode`, `$schema`) is a scaffold change that needs review
+    (`USER_KEYS` in `run-agent.sh`, assertion S26), not a local edit.
+
+Workspaces assembled before Phase 3 carry the old project settings; `run-agent`
+accepts that exact file, so they need no change.
+
+## Update the image without resetting the workspace
+
+The same procedure installs any image-installed change: the firewall (E1), the launchers,
+the Claude managed policy and guarded wrappers (Phase 3), the Copilot policy hook or a
+newer CLI. The sequence is **reviewed scaffold -> refreshed build context ->
 rebuilt image -> new container**. A fresh container from the old image still has the
-old firewall. E1 originated on `fix/e1-firewall-transitions` and is included in the
+old scripts. E1 originated on `fix/e1-firewall-transitions` and is included in the
 review-round feature branch; deployment is a
 separate step tracked in [SECURITY-REVIEW.md](SECURITY-REVIEW.md#e1-remediation-on-a-separate-branch).
 
 1. Exit the current agent normally. Confirm that the working scaffold contains the reviewed
-   E1 changes. Review the assembled build context before building from it;
+   changes. Review the assembled build context before building from it;
    agent-written files are not automatically trusted. Do not run `new-sandbox.sh --force`
    for this update.
-2. Refresh the E1 build inputs from the trusted scaffold, inside WSL:
+2. Refresh the build inputs from the trusted scaffold, inside WSL:
 
 ```bash
 (
@@ -380,9 +422,10 @@ separate step tracked in [SECURITY-REVIEW.md](SECURITY-REVIEW.md#e1-remediation-
     done
     cd ~/pera-sandbox
     cp --remove-destination "$SCAFFOLD/.devcontainer/Dockerfile" .devcontainer/Dockerfile
-    cp --remove-destination "$SCAFFOLD/container/init-firewall.sh" \
-       "$SCAFFOLD/container/run-agent.sh" \
-       "$SCAFFOLD/container/run-copilot.sh" container/
+    # Every tracked file under container/ (certs/ is machine-specific and stays as it is).
+    for f in "$SCAFFOLD"/container/*; do
+        [ -f "$f" ] && cp --remove-destination "$f" container/
+    done
     cp --remove-destination "$SCAFFOLD/overlay/CLAUDE.md" CLAUDE.md
     cp --remove-destination "$SCAFFOLD/overlay/CLAUDE.md" AGENTS.md
 )
@@ -391,13 +434,13 @@ separate step tracked in [SECURITY-REVIEW.md](SECURITY-REVIEW.md#e1-remediation-
 3. If `.secrets/npmrc` was purged, recreate `.secrets` with mode 700 and copy your
    host npm credential file into it with mode 600. Do not print or commit its contents.
 4. Re-run the `podman build` command in **Spin-up, step 2**. Use the refreshed build context; the
-   Dockerfile installs the firewall and both launchers into the rebuilt image.
+   Dockerfile installs the firewall, launchers, wrappers and policies into the rebuilt image.
 5. Start a new container with the command in **Spin-up, step 4 or 4-alt**. Existing containers
    are not updated in place. Do not manually transplant the script into a locked-down
    container or remove its `/run` state.
 
 The workspace's repos, commits, warmed caches and auth volumes are preserved.
-A firewall-only update does not require another prepare if the needed build inputs
+An image-only update does not require another prepare if the needed build inputs
 and profiles remain warmed. Missing dependencies still require a separate prepare
 container. Source-mounted regression results do not prove the rebuilt image was
 deployed; record its image ID and startup outcome in the review record.
@@ -454,7 +497,8 @@ start a new task in a new `SANDBOX_ROOT` rather than forcing past a registration
   it in an IDE that auto-runs tasks. The sandbox repos have no git remotes — that's
   intentional.
 - **Guarded startup is mandatory.** Use `run-agent` or `run-copilot`, not a bare CLI
-  from an uninitialized shell. All configured domain names must resolve, the first
+  from an uninitialized shell; the image's `claude` / `copilot` wrappers refuse one (E5,
+  see [Startup refusals](#startup-refusals)). All configured domain names must resolve, the first
   non-CIDR endpoint must answer the positive probe, and `example.com` must fail the
   negative probe. The first endpoint must also be pinned in `/etc/hosts`, and a DNS
   query from a non-root user must fail. CIDR-only lists skip the positive probe. This

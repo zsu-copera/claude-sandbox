@@ -1,8 +1,10 @@
 # Phase 3 spec: Claude inner sandbox (E2/E3), guarded startup (E5), next-session integrity (N5)
 
-**Status:** draft for owner review, 2026-09-23. Nothing described here is implemented.
-This is firewall-adjacent and settings-precedence work: under `AGENTS.md` it is not
-delegable without this review, and the implementation diff needs a second review.
+**Status:** approved by the owner 2026-09-24 with the recommended option on every
+decision (§5); implemented on `feat/phase3-inner-sandbox-startup`, **not deployed**. §9
+records the decisions and every place the implementation departs from or adds to this
+text. This is firewall-adjacent and settings-precedence work: under `AGENTS.md` it is not
+delegable without review, and the implementation diff needs a second review.
 
 ## 1. Goal
 
@@ -191,3 +193,90 @@ after the rebuild. Nothing runs against a live agent session.
 N1 (hook pattern gaps) stays accepted. So does HTTPS to allowlisted providers. Nor does this
 phase add a hostname-level egress proxy, or enforce anything for processes that deliberately
 exec the real CLI inside an already-guarded container.
+
+## 9. Decisions and implementation record (2026-09-24)
+
+**Decisions.** The owner took the recommendation on each item in §5:
+
+1. **A**, baked CLIs only.
+2. Refuse.
+3. The allowlist as proposed.
+4. My proposal, since §5 offered none: the tamper probes (L4–L6) are refused before any CLI
+   starts, so they need no login and run against synthetic files. Only probes that must
+   reach the model (L1, L2, L7) use the real `pera-claude-config` volume, in disposable
+   containers, and nothing tampered is ever written to it.
+5. Yes, S10 moves.
+
+**Confirmed from the 2.1.280 binary** (static, disposable `--network=none` container):
+
+- `strictAllowlist` sits under `sandbox.network`. With `allowManagedDomainsOnly` the
+  network proxy's ask callback blocks unlisted hosts, so it is belt and braces.
+- `bwrapPath` is honoured from managed settings (its error text says "Fix the path in
+  managed settings").
+- Three key groups are **ignored from project settings** but honoured from user
+  settings:
+  - the command-running keys: `apiKeyHelper`, `awsAuthRefresh`, `awsCredentialExport`,
+    `fileSuggestion`, `gcpAuthRefresh`, `otelHeadersHelper`, `processWrapper`,
+    `policyHelpers`, `proxyAuthHelper`, `statusLine`, `subagentStatusLine`;
+  - `bwrapPath`, `ripgrep` and `socatPath`;
+  - the weakening keys, `enableWeaker*` and `allowAllUnixSockets` among them.
+
+  `excludedCommands` and `allowWrite` are honoured from project settings. Both the
+  project byte comparison and the user-settings allowlist are therefore needed.
+- Settings `env` cannot set `CLAUDE_CODE_MANAGED_SETTINGS_PATH`: it is on the CLI's
+  ignored-env list.
+- `allowManagedMcpServersOnly` only restricts which *allowlist* applies, and an absent
+  `allowedMcpServers` is no allowlist. An explicit empty array admits no servers.
+
+**Departures and additions**, for the reviewer:
+
+| # | Change from the text above | Why |
+|---|---|---|
+| D-1 | §4.3 checks run **before** the lockdown, not after | Same as N3: a refusal touches neither the network nor the credentials. No agent process exists at either point. |
+| D-2 | Managed file adds `"allowedMcpServers": []` and `sandbox.network.strictAllowlist: true` | See the MCP and network points above. |
+| D-3 | Managed deny adds `Edit(//workspace/.claude/**)`, `Edit(//home/vscode/.claude/**)`, `Edit(//workspace/.mcp.json)` | The CLI reloads settings mid-session, and lists merge, so an in-session write to project settings could widen `excludedCommands` for the rest of that session. §4.3 only protects the next session. Whether Edit denies also become bubblewrap write denies for Bash is to be observed (L10 below), not assumed. |
+| D-4 | `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB` is also unset | The CLI's own message says `=0` "loses subprocess isolation". |
+| D-5 | Canonical project settings live in `container/claude-project-settings.json`; `overlay/.claude/` is removed | The image build context contains only `container/`, and one file now serves both assembly and the image. |
+| D-6 | One wrapper script, installed as `claude` with a `copilot` symlink; it dispatches on its name | One file to review. |
+| D-7 | Prepare no longer mounts the Claude config volume (docs) and deletes a stale `/workspace/.agent-cli` | With A it has no use for the login, and it runs repository build scripts with the network open. |
+| D-9 | The canonical project settings are **not** shrunk to bypass-only. They keep the old deny rules and the `enabled`, `/tmp` and `api.anthropic.com` sandbox entries, without the old `failIfUnavailable: false` | A workspace assembled from this scaffold but run on the old image (step 2 skipped) would otherwise run Claude with no deny rules and no sandbox, because the old image has no managed policy. On a Phase 3 image these entries are inert: managed scalars win, and the managed-only locks ignore project rules and domains. |
+| D-8 | `run-copilot`: `GITHUB_CIDRS=$(...) \|\| true` | Pre-existing bug found by `verify-startup.sh`. Under `set -e`/`pipefail`, a failed `api.github.com/meta` fetch exited the launcher with curl's status, so the documented static-CIDR fallback could never run. |
+
+**Added observation.** L10: in a live session, write to `/workspace/.claude/settings.json`
+with the Edit tool and with a sandboxed Bash command. Both must be refused. Record which
+layer refused each.
+
+**Not covered by the implementation** (residual, documented):
+- Instruction files persist too: the workspace `CLAUDE.md`/`AGENTS.md`, `~/.claude/CLAUDE.md`,
+  skills and agents. They can steer the next session but grant nothing the enforced
+  policy does not.
+- Copilot's `~/.copilot` (for example `mcp-config.json`) is not validated (§4.5).
+- Launcher arguments are operator-trusted. A `--settings` or `--mcp-config` passed by the
+  operator is not checked.
+
+## 10. Live observations on a test image (2026-09-24)
+
+Image `localhost/pera-sandbox-p3test` (`4ba0c45…`) is the current image (`fda0c678…`)
+plus the Phase 3 files, installed root-owned exactly as the Dockerfile installs them,
+with the same `PATH`. It is **not the rebuild**: the CLIs are still the baked Claude 2.1.280
+and Copilot 1.0.83. Every container ran against a fresh synthetic workspace. Only the
+model-reaching probes mounted the real `pera-claude-config` volume, and nothing tampered
+was written to it. Transcripts are private host evidence outside the repository.
+
+| # | Observation | Result |
+|---|---|---|
+| L1 | `claude doctor` in a guarded state | "Managed settings (remote): none configured for this organization", no issues. It does not list file sources or rejected keys, and `/status` was not run. The file's effect is shown behaviourally below, including "claude.ai MCP server blocked by enterprise policy" at startup. **Met behaviourally; the source listing is not observed.** |
+| L2 | Guarded `run-agent` session: a Bash write to `/home/vscode`, the same with `dangerouslyDisableSandbox: true`, and a write to `/tmp` | Refused (read-only file system); refused (still sandboxed); allowed. **Pass.** |
+| L3 | Real CLI started by path, capabilities held after lockdown, so bubblewrap cannot start | The CLI **started**. Its Bash call failed inside bubblewrap ("Unexpected capabilities but not setuid"), and it reported that bypassing the sandbox is turned off. **No unsandboxed execution. The spec's "refuses to start" did not happen**: `failIfUnavailable` tests availability, not whether bwrap works under held capabilities. |
+| L4 | Project `excludedCommands: ["touch"]` on a direct start past `run-agent` | `touch` still ran sandboxed. With `allowUnsandboxedCommands: false`, excluded commands are not run outside the sandbox on 2.1.280. `run-agent` refuses the file regardless. |
+| L4c | Project `allowWrite: ["/home/vscode"]` on a direct start | **The write succeeded.** A project list merges past the managed policy and widens sandboxed writes. This is the gap the N5 check closes for the next session. L10 shows the agent cannot plant it within a session. |
+| L5 | A permissive managed file (`sandbox.enabled: false`) at `CLAUDE_CODE_MANAGED_SETTINGS_PATH`, direct start | Still sandboxed, so no loosening was observed for that key (`sandbox.enabled` is on the CLI's restrictive-wins list). Other keys were not tried. The launcher and wrapper remove the variable (`verify-startup.sh`). |
+| L6 | Permissive `remote-settings.json` | `run-agent` refuses (`verify-startup.sh`); not repeated live. |
+| L7 | DNS closed, inside the sandbox | `api.anthropic.com` resolves from the pinned `/etc/hosts`; `example.com` does not resolve; HTTPS to it is refused by the sandbox proxy ("host is not on the allow list"); the model round trip works. **Pass.** |
+| L8 | Wrappers: bare shell; after a real lockdown with capabilities held; guarded (L2) | Exit 78 for `claude` and `copilot`; exit 78 naming the capability set; runs. `--version` prints in all three. Both names resolve to the wrappers. **Pass.** |
+| L10 | Within the session: Bash, then the Write tool, on `/workspace/.claude/settings.json` | Read-only file system; "denied by your permission settings". The host copy was unchanged. **Pass.** |
+| — | Bash reads of the config volume | Inside the sandbox, `/home/vscode/.claude/settings.json` does not exist: the managed `Read` deny also hides the path from sandboxed Bash. |
+
+**Still to observe:** all of L1–L10 on the rebuilt image, and a guarded Copilot session
+through the wrapper (it needs the PAT, so it was left to the first post-rebuild session).
+L9 is the suite ladder recorded in `VERIFY-ASSERTIONS.md`.
