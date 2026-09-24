@@ -101,6 +101,19 @@ json_get() {
     esac
 }
 
+# Evaluate a boolean over a JSON file: $2 for jq, $3 as a JavaScript expression over `o`.
+# Both are given because the Windows host usually has node and no jq.
+json_ok() {
+    case "$JSON_TOOL" in
+        jq)   [ "$(jq -r "$2" "$1" 2>/dev/null)" = true ] ;;
+        node) node -e '
+                const o=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));
+                process.exit(eval(process.argv[2]) === true ? 0 : 1);
+              ' "$1" "$3" >/dev/null 2>&1 ;;
+        *)    return 2 ;;
+    esac
+}
+
 # Strip JSONC comments without touching comment-like sequences inside strings.
 jsonc_valid() {
     [ "$JSON_TOOL" = "node" ] || command -v node >/dev/null 2>&1 || return 2
@@ -198,7 +211,7 @@ fi
 
 # --- S6  what new-sandbox.sh needs --------------------------------------------------------
 s6_bad=""
-for p in overlay/CLAUDE.md overlay/.claude .devcontainer container dockerignore; do
+for p in overlay/CLAUDE.md container/claude-project-settings.json .devcontainer container dockerignore; do
     [ -e "$p" ] || s6_bad="$s6_bad $p"
 done
 [ -z "$s6_bad" ] && pass S6 "everything new-sandbox.sh copies is present" \
@@ -223,7 +236,8 @@ if [ -z "$JSON_TOOL" ]; then
     skip S9 "devcontainer.json (JSONC) validity" "node is required to strip comments safely"
 else
     s8_bad=""
-    for f in overlay/.claude/settings.json container/copilot-settings.json container/copilot-policy.json; do
+    for f in container/claude-managed-settings.json container/claude-project-settings.json \
+             container/copilot-settings.json container/copilot-policy.json; do
         [ -f "$f" ] || { s8_bad="$s8_bad $f(missing)"; continue; }
         json_valid "$f" || s8_bad="$s8_bad $f"
     done
@@ -240,19 +254,52 @@ else
     fi
 fi
 
-# --- S10  agent settings still declare the guardrails --------------------------------------
+# --- S10  Claude's mandatory policy still declares the guardrails ---------------------------
+# Moved from the overlay's project settings to the managed file in Phase 3 (E2/E3, approved
+# 2026-09-24): project settings are agent-writable and their lists merge, so the guardrails
+# must live where only root can write and where the CLI gives them precedence.
 if [ -z "$JSON_TOOL" ]; then
-    skip S10 "overlay settings guardrails" "no JSON tool available"
+    skip S10 "managed settings guardrails" "no JSON tool available"
 else
+    m=container/claude-managed-settings.json
     s10_bad=""
-    [ "$(json_get overlay/.claude/settings.json '.permissions.defaultMode')" = "bypassPermissions" ] \
-        || s10_bad="$s10_bad defaultMode"
-    dl=$(json_get overlay/.claude/settings.json '.permissions.deny')
-    [ -n "$dl" ] && [ "$dl" != "null" ] && [ "$dl" != "[]" ] || s10_bad="$s10_bad deny-list"
-    [ "$(json_get overlay/.claude/settings.json '.sandbox.enabled')" = "true" ] \
-        || s10_bad="$s10_bad sandbox.enabled"
-    [ -z "$s10_bad" ] && pass S10 "overlay settings still declare bypassPermissions + deny + sandbox" \
-                      || fail S10 "an agent guardrail was removed from overlay settings" "missing/changed:$s10_bad"
+    chk() { json_ok "$m" "$2" "$3" || s10_bad="$s10_bad $1"; }
+    chk sandbox.enabled          '.sandbox.enabled == true'                   'o.sandbox.enabled === true'
+    chk failIfUnavailable        '.sandbox.failIfUnavailable == true'         'o.sandbox.failIfUnavailable === true'
+    chk allowUnsandboxedCommands '.sandbox.allowUnsandboxedCommands == false' 'o.sandbox.allowUnsandboxedCommands === false'
+    chk no-excludedCommands      '(.sandbox.excludedCommands // []) == []'    '(o.sandbox.excludedCommands || []).length === 0'
+    chk weaker-off \
+        '.sandbox.enableWeakerNestedSandbox == false and .sandbox.enableWeakerNetworkIsolation == false' \
+        'o.sandbox.enableWeakerNestedSandbox === false && o.sandbox.enableWeakerNetworkIsolation === false'
+    # Java ignores $TMPDIR, so java.io.tmpdir stays /tmp and the WAR assembly needs it writable.
+    chk allowWrite-tmp '.sandbox.filesystem.allowWrite == ["/tmp"]' \
+        'JSON.stringify(o.sandbox.filesystem.allowWrite) === JSON.stringify(["/tmp"])'
+    chk managed-domains-only '.sandbox.network.allowManagedDomainsOnly == true' \
+        'o.sandbox.network.allowManagedDomainsOnly === true'
+    for k in allowManagedPermissionRulesOnly allowManagedHooksOnly allowManagedMcpServersOnly; do
+        chk "$k" ".$k == true" "o.$k === true"
+    done
+    chk allowedMcpServers-empty '.allowedMcpServers == []' \
+        'Array.isArray(o.allowedMcpServers) && o.allowedMcpServers.length === 0'
+    for rule in 'Bash(git push)' 'Bash(git push *)' 'Read(//workspace/.secrets/**)' \
+                'Read(//home/vscode/.claude/**)' 'Edit(//workspace/.claude/**)' 'Edit(//home/vscode/.claude/**)'; do
+        chk "deny:$rule" "any(.permissions.deny[]; . == \"$rule\")" "o.permissions.deny.includes(\"$rule\")"
+    done
+    # Sessions run in bypass mode by design; a lock here would stop every launch.
+    chk no-bypass-lock '.permissions.disableBypassPermissionsMode == null' \
+        'o.permissions.disableBypassPermissionsMode === undefined'
+    # The project file is exactly this. Its deny rules and sandbox lists repeat the managed
+    # ones, so a workspace run on an image without the managed policy is no weaker than
+    # before Phase 3; on a Phase 3 image they are inert (managed scalars win, managed-only
+    # locks ignore project rules and domains). Anything else would merge into the managed
+    # policy, and run-agent compares the workspace copy byte for byte with the baked one.
+    json_ok container/claude-project-settings.json \
+        '. == {"permissions":{"defaultMode":"bypassPermissions","deny":["Bash(git push)","Bash(git push *)","Read(//workspace/.secrets/**)","Read(//home/vscode/.claude/**)"]},"sandbox":{"enabled":true,"filesystem":{"allowWrite":["/tmp"]},"network":{"allowedDomains":["api.anthropic.com"]}}}' \
+        'JSON.stringify(o) === JSON.stringify({permissions:{defaultMode:"bypassPermissions",deny:["Bash(git push)","Bash(git push *)","Read(//workspace/.secrets/**)","Read(//home/vscode/.claude/**)"]},sandbox:{enabled:true,filesystem:{allowWrite:["/tmp"]},network:{allowedDomains:["api.anthropic.com"]}}})' \
+        || s10_bad="$s10_bad project-settings-changed"
+    unset -f chk
+    [ -z "$s10_bad" ] && pass S10 "managed policy requires the sandbox, locks lower scopes, keeps deny rules and /tmp" \
+                      || fail S10 "a guardrail was removed from the managed policy or project settings" "missing/changed:$s10_bad"
 fi
 
 # --- S11  one-way state and staged updates (source structure, not runtime proof) ------------
@@ -463,6 +510,73 @@ fi
         This hook is what denies 'git -C . push'; the --deny-tool flags do not. Every failure
         mode here is silent and fails open — do not relax this assertion to make it pass."
 
+# --- S25  managed policy and guarded wrappers installed root-owned, wrappers first ---------
+# Source structure of the Dockerfile. Ownership, PATH order and refusals are observed at
+# runtime by verify-startup.sh and on the rebuilt image (Phase 3 spec, L1 and L8).
+s25_bad=""
+df=.devcontainer/Dockerfile
+has() { grep -qxF -- "$2" "$df" || s25_bad="$s25_bad $1"; }
+has managed-not-COPYd  'COPY container/claude-managed-settings.json /etc/claude-code/managed-settings.json'
+has canonical-not-COPYd 'COPY container/claude-project-settings.json /usr/local/share/pera-sandbox/claude-project-settings.json'
+has wrapper-not-COPYd  'COPY container/agent-cli-guard.sh /usr/local/lib/pera-sandbox/bin/claude'
+unset -f has
+dockerfile_code=$(code_only "$df")
+for needle in 'mkdir -p /etc/claude-code/managed-settings.d' 'chown -R root:root /etc/claude-code' \
+              'chmod 0644 /etc/claude-code/managed-settings.json' 'ln -s claude /usr/local/lib/pera-sandbox/bin/copilot' \
+              'chown -R root:root /usr/local/lib/pera-sandbox'; do
+    echo "$dockerfile_code" | grep -qF -- "$needle" || s25_bad="$s25_bad missing:$needle"
+done
+last_path=$(echo "$dockerfile_code" | grep -oE 'PATH=[^ ]+' | tail -1)
+case "$last_path" in
+    PATH=/usr/local/lib/pera-sandbox/bin:*) : ;;
+    *) s25_bad="$s25_bad wrapper-not-first-on-PATH($last_path)" ;;
+esac
+grep -qxF 'CANONICAL=/usr/local/share/pera-sandbox/claude-project-settings.json' container/run-agent.sh \
+    || s25_bad="$s25_bad run-agent-canonical-path"
+grep -qF 'cp "$SCAFFOLD/container/claude-project-settings.json" "$SANDBOX_ROOT/.claude/settings.json"' new-sandbox.sh \
+    || s25_bad="$s25_bad assembly-not-canonical"
+g=container/agent-cli-guard.sh
+wrapper_code=$(code_only "$g")
+for line in '    claude)  real=/home/vscode/.local/bin/claude ;;' '    copilot) real=/usr/local/bin/copilot ;;' \
+            'lock=/run/claude-lockdown-domains' 'exec "$real" "$@"'; do
+    echo "$wrapper_code" | grep -qxF -- "$line" || s25_bad="$s25_bad wrapper:$line"
+done
+echo "$wrapper_code" | grep -qF 'CapInh:|CapPrm:|CapEff:|CapAmb:)' || s25_bad="$s25_bad wrapper-caps-check"
+[ -z "$s25_bad" ] && pass S25 "image installs the managed policy and guarded wrappers root-owned, wrappers first on PATH" \
+                  || fail S25 "managed-policy or guarded-startup packaging changed (E2/E3/E5)" "broken:$s25_bad"
+
+# --- S26  launchers check persistent inputs and run only baked CLIs (N5) --------------------
+s26_bad=""
+ra=container/run-agent.sh
+for f in "$ra" "$g"; do
+    unsets=$(code_only "$f" | sed -n '/^ *unset CLAUDE_CODE_MANAGED_SETTINGS_PATH/,/[^\\]$/p')
+    for v in CLAUDE_CODE_MANAGED_SETTINGS_PATH CLAUDE_CODE_REMOTE_SETTINGS_PATH CLAUDE_CODE_MOCK_REMOTE_SETTINGS \
+             CLAUDE_CODE_DISABLE_ADMIN_ENV_UNION CLAUDE_CODE_SUBPROCESS_ENV_SCRUB; do
+        echo "$unsets" | grep -qw -- "$v" || s26_bad="$s26_bad $f:no-unset-$v"
+    done
+done
+# The allowlist is the reviewed decision (2026-09-24). Widening it is a review, not an edit
+# that makes this pass.
+grep -qxF 'USER_KEYS='\''["$schema","effortLevel","language","model","outputStyle","skipDangerousModePermissionPrompt","theme","tui","viewMode"]'\''' "$ra" \
+    || s26_bad="$s26_bad user-allowlist-changed"
+ra_code=$(code_only "$ra")
+for needle in '"$WS/.claude/settings.local.json" "$WS/.mcp.json"' 'remote-settings.json' 'mcpServers' \
+              'LEGACY_PROJECT_SHA=' 'cmp -s -- "$p" "$CANONICAL"'; do
+    echo "$ra_code" | grep -qF -- "$needle" || s26_bad="$s26_bad no-check:$needle"
+done
+l_check=$(line_of "$ra" '^for c in "\$CONFIG/.claude.json"')
+l_lock=$(line_of "$ra" 'init-firewall.sh lockdown')
+l_exec=$(line_of "$ra" '^setpriv ')
+if [ -z "$l_check" ] || [ -z "$l_lock" ] || [ -z "$l_exec" ] || [ "$l_check" -gt "$l_lock" ]; then
+    s26_bad="$s26_bad checks-not-before-lockdown"
+fi
+for f in container/run-agent.sh container/run-copilot.sh; do
+    code_only "$f" | grep -q 'agent-cli' && s26_bad="$s26_bad $f:uses-staged-cli"
+done
+[ -z "$s26_bad" ] && pass S26 "run-agent checks persistent inputs before lockdown; launchers run only baked CLIs" \
+                              "Behavior: verify-startup.sh." \
+                  || fail S26 "next-session input checks or the baked-CLI rule changed (finding N5)" "broken:$s26_bad"
+
 # --- summary --------------------------------------------------------------------------------
 echo
 printf '%s%d passed%s, %s%d failed%s, %s%d warnings%s, %s%d skipped%s\n' \
@@ -471,7 +585,7 @@ printf '%s%d passed%s, %s%d failed%s, %s%d warnings%s, %s%d skipped%s\n' \
 if [ "$N_FAIL" -gt 0 ]; then
     printf 'failed: %s\n' "${FAILED_IDS[*]}"
     echo
-    echo "Assertions S11-S18 guard isolation invariants. If one of those failed, the right"
+    echo "Assertions S10-S18 and S24-S26 guard isolation invariants. If one of those failed, the right"
     echo "response is almost never to relax the assertion."
     exit 1
 fi
