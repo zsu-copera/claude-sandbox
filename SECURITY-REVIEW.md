@@ -720,10 +720,11 @@ Fixed:
 - **`COPILOT_CLI_DIST_DIR`** is now unset.
 - **Doc overclaims** are corrected.
 
-Left open for the owner:
-- confirmation of decision 4, which was the lead's proposal.
-
-Decided 2026-09-25: L3 is answered with managed `WebFetch` and `WebSearch` denies (spec §13).
+Decided by the owner 2026-09-25 (spec §13):
+- **L3:** managed `WebFetch` and `WebSearch` denies.
+- **Decision 4:** the benign live checks use the real login volume; the remaining
+  loosened-settings probes use a throwaway volume with a fresh sign-in; the checked volume
+  files are compared before and after each real-volume check.
 
 Added to the deployment gate:
 - `/status` and the remaining L4 keys on the rebuilt image;

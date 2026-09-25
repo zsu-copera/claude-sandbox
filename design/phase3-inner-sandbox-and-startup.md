@@ -204,7 +204,8 @@ exec the real CLI inside an already-guarded container.
 4. My proposal, since §5 offered none: the tamper probes (L4–L6) are refused before any CLI
    starts, so they need no login and run against synthetic files. Only probes that must
    reach the model (L1, L2, L7) use the real `pera-claude-config` volume, in disposable
-   containers, and nothing tampered is ever written to it.
+   containers, and nothing tampered is ever written to it. Refined and confirmed by the
+   owner in §13.
 5. Yes, S10 moves.
 
 **Confirmed from the 2.1.280 binary** (static, disposable `--network=none` container):
@@ -361,7 +362,7 @@ and says so. Any rerun should put the evidence under the trusted `/workspace`.
 | Corrected the severity of pass 1's M2, L1, L2 and L3: an outstanding verification obligation, a conditional hygiene risk, runtime composition unresolved, not reproduced | **Accepted.** SECURITY-REVIEW's server-managed condition now says the composition is unverified rather than "replaces the file entirely". |
 | **N1** (medium). A hard link to the canonical `/workspace/.claude/settings.json` passes the regular-file, symlink and byte checks. A later session can then rewrite that inode through the ordinary writable name, and the pathname denies and the sandbox bind do not cover it. Found by reading. | **Fixed:** every validated file must also have exactly one link (`stat -c %h`). The real volume files and workspace settings all have one link. New scenarios `agent-project-hardlink` and `agent-user-hardlink`. Whether sandboxed Bash can create such a link in-session (a cross-mount `link()` should fail with `EXDEV`) is unverified; the startup check refuses one at the next start either way. |
 | **N2** (medium). The QUICKSTART recovery `cp` follows a symlinked `.claude` parent on the host and could overwrite the operator's own `~/.claude/settings.json`. | **Fixed:** the recovery block removes a symlinked `.claude` (the link, not the target), refuses anything that is not a plain directory, and breaks any hard link before copying. |
-| **Extraction.** Decision 4 was the lead's proposal: §5 offered no recommendation, and the owner's "go with your recommendations" preceded it. | **Open for the owner.** It needs explicit confirmation or change. |
+| **Extraction.** Decision 4 was the lead's proposal: §5 offered no recommendation, and the owner's "go with your recommendations" preceded it. | **Open for the owner.** It needs explicit confirmation or change. **Decided 2026-09-25 (§13):** option C, a split between the real volume and a throwaway sign-in. |
 | **Extraction.** L1 required seeing the selected source, skipped sources and rejected keys; §10 claims "met behaviourally". | **Accepted as unmet.** Moved to the rebuilt-image gate: interactive `/status`. |
 | **Extraction.** L3 required "CLI refuses to start". The observed "starts, and Bash fails" is not equivalent, because the in-process tools (Read, Edit, Write, WebFetch) still work, and in an unguarded container the firewall is also open. | **Accepted as unmet. Owner decision needed.** Either accept the residual, now that the E5 wrappers catch every PATH route including interactive shells (§12 M1) and only a by-path or IDE-extension start remains; or add a managed `WebFetch` deny as extra hardening, since it has no use in a locked-down session. Not changed unilaterally. **Decided 2026-09-25 (§13):** managed denies for `WebFetch` and `WebSearch`. |
 | **Extraction.** L4 required recording direct-start behaviour for all six seeded keys; §10 covers `excludedCommands` and `allowWrite` only. | **Accepted as incomplete.** The other four (`bwrapPath`, a hook, `statusLine`, `apiKeyHelper`) are ignored from project settings by the binary's own lists (§9) and are refused by `run-agent`. Their live characterization joins the rebuilt-image gate. |
@@ -370,9 +371,9 @@ and says so. Any rerun should put the evidence under the trusted `/workspace`.
 | The review-0 dispositions: H2's nested-settings refusal and recursive deny not adopted; M2's `CLAUDE_CODE_SAFE_MODE` not unset | **Stand as recorded.** `CLAUDE_CODE_SAFE_MODE` is left alone deliberately: its effect is undetermined, and unsetting an operator's restrictive flag could weaken intent. |
 
 **Gate before E2/E3/E5/N5 count as deployed:**
-- the owner's decision on decision 4 (L3 is decided, §13);
 - the rebuild;
-- on the rebuilt image, L1 (including `/status`), L2–L10, L12 and the remaining L4 keys;
+- on the rebuilt image, L1 (including `/status`), L2–L10, L12 and the remaining L4 keys,
+  each with the login §13 assigns it;
 - a supervised real build and unit-test run.
 
 Security/IT sign-off (C5) remains required for unattended use.
@@ -400,4 +401,18 @@ Security/IT sign-off (C5) remains required for unattended use.
   and offers no web tools.* To observe on the rebuilt image. The file tools still work in
   such a start, and that stays a documented residual.
 
-**Decision 4** is still open.
+**Decision 4: split the logins (option C).** The owner confirmed the lead's proposal in
+this refined form:
+
+| Check | Login |
+|---|---|
+| L1 (`/status`), L2, L7, L10, L12, and the supervised build and unit-test run | The real `pera-claude-config` volume, in disposable containers. These run the reviewed policy unchanged, as a real session would. L1 only means something with the organisation's own account, since server-managed settings come from it. |
+| The remaining L4 direct-start probes: `bwrapPath`, a hook, `statusLine`, `apiKeyHelper` | A **throwaway volume** (for example `pera-claude-config-probe`), created empty and signed in once by the owner with their own account. It is a new sign-in, not a copy of the real volume, and it is removed after the gate. Three of the keys run commands; if a CLI release ever honoured one, it would run outside the sandbox beside a token, so none of these probes runs beside the real volume. |
+| L3 (no web tools offered), L4 refusals, L5, L6, L8 | No login. Synthetic files, as before. |
+
+Around each real-volume check, the lead records the checked volume files before and after:
+a hash of `settings.json` and `remote-settings.json`, and the `mcpServers` content of
+`.claude.json`, which otherwise changes in every session. Any difference stops the gate.
+
+The throwaway token still belongs to the owner's account; whether one sign-in can be revoked
+on its own is unverified. It is exposed only to the lead's own probe commands.
