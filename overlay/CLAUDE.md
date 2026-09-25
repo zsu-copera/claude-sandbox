@@ -39,7 +39,7 @@ workspace. This file replaces the normal Windows workspace instructions.
   pinned `/etc/hosts` block, or attempt to reopen networking. Incomplete initialization requires a human to start a fresh container.
 - **Do not alter the agent configuration.** Leave `/workspace/.claude/`, `/workspace/.mcp.json`
   and `~/.claude/` alone, and do not try to turn off or get around the command sandbox. The
-  policy is root-owned and the next session refuses to start if these files change. Claude
+  policy is root-owned, and the next session's startup check refuses to start if it finds these changed. Claude
   Code runs Bash commands in a sandbox that can write only to `/workspace` and `/tmp`. If a
   command fails because of it, report the failure rather than working around it.
 - **Unit tests only.** Integration tests need the PERA AS400/Oracle databases, which are

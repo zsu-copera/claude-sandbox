@@ -269,16 +269,31 @@ was written to it. Transcripts are private host evidence outside the repository.
 | L2 | Guarded `run-agent` session: a Bash write to `/home/vscode`, the same with `dangerouslyDisableSandbox: true`, and a write to `/tmp` | Refused (read-only file system); refused (still sandboxed); allowed. **Pass.** |
 | L3 | Real CLI started by path, capabilities held after lockdown, so bubblewrap cannot start | The CLI **started**. Its Bash call failed inside bubblewrap ("Unexpected capabilities but not setuid"), and it reported that bypassing the sandbox is turned off. **No unsandboxed execution. The spec's "refuses to start" did not happen**: `failIfUnavailable` tests availability, not whether bwrap works under held capabilities. |
 | L4 | Project `excludedCommands: ["touch"]` on a direct start past `run-agent` | `touch` still ran sandboxed. With `allowUnsandboxedCommands: false`, excluded commands are not run outside the sandbox on 2.1.280. `run-agent` refuses the file regardless. |
-| L4c | Project `allowWrite: ["/home/vscode"]` on a direct start | **The write succeeded.** A project list merges past the managed policy and widens sandboxed writes. This is the gap the N5 check closes for the next session. L10 shows the agent cannot plant it within a session. |
+| L4c | Project `allowWrite: ["/home/vscode"]` on a direct start | **The write succeeded.** A project list merges past the managed policy and widens sandboxed writes. This is the gap the N5 check closes for the next session. L10 shows the direct-path writes are refused within a session; a hard-link alias was an untested route until the single-link check (§12, pass 2 N1). |
 | L5 | A permissive managed file (`sandbox.enabled: false`) at `CLAUDE_CODE_MANAGED_SETTINGS_PATH`, direct start | Still sandboxed, so no loosening was observed for that key (`sandbox.enabled` is on the CLI's restrictive-wins list). Other keys were not tried. The launcher and wrapper remove the variable (`verify-startup.sh`). |
 | L6 | Permissive `remote-settings.json` | `run-agent` refuses (`verify-startup.sh`); not repeated live. |
 | L7 | DNS closed, inside the sandbox | `api.anthropic.com` resolves from the pinned `/etc/hosts`; `example.com` does not resolve; HTTPS to it is refused by the sandbox proxy ("host is not on the allow list"); the model round trip works. **Pass.** |
-| L8 | Wrappers: bare shell; after a real lockdown with capabilities held; guarded (L2) | Exit 78 for `claude` and `copilot`; exit 78 naming the capability set; runs. `--version` prints in all three. Both names resolve to the wrappers. **Pass.** |
+| L8 | Wrappers: bare shell; after a real lockdown with capabilities held; guarded (L2) | Exit 78 for `claude` and `copilot`; exit 78 naming the capability set; runs. `--version` prints in all three. Both names resolve to the wrappers in a non-interactive shell; interactive and login shells did not until the §12 M1 fix. **Pass.** |
 | L10 | Within the session: Bash, then the Write tool, on `/workspace/.claude/settings.json` | Read-only file system; "denied by your permission settings". The host copy was unchanged. **Pass.** |
 | — | Bash reads of the config volume | Inside the sandbox, `/home/vscode/.claude/settings.json` does not exist: the managed `Read` deny also hides the path from sandboxed Bash. |
 
-**Still to observe:** all of L1–L10 on the rebuilt image, and a guarded Copilot session
-through the wrapper (it needs the PAT, so it was left to the first post-rebuild session).
+**Added later the same day:**
+- **Guarded Copilot start-up**, observed. On the test image, `run-copilot` with the PAT secret:
+  - locked egress to the Copilot endpoints and passed all three self-tests;
+  - purged credentials;
+  - printed the version banner through the wrapper, with `--no-auto-update` and capabilities
+    dropped;
+  - started a guarded session, and GPT-6 Astra answered.
+
+  The pass-2 review (§12) then ran as a full guarded Copilot session.
+- **L12:** a guarded Claude session through the relocated link (§12, M1) ran a Bash call, and
+  nothing recreated `~/.local/bin/claude`.
+
+**Still to observe:**
+- All of L1–L10 and L12 on the rebuilt image.
+- A **supervised real build and unit-test run** (Maven WAR, Karma ChromeHeadless) under
+  the mandatory sandbox, before E2/E3 count as deployed (§12, pass 1 M2).
+
 L9 is the suite ladder recorded in `VERIFY-ASSERTIONS.md`.
 
 ## 11. Independent review and fixes (2026-09-24)
@@ -304,3 +319,60 @@ startup check.
 
 **Residual, still not covered:** Copilot's `installed-plugins/` and other `~/.copilot`
 state (§4.5); instruction files; operator-supplied launcher arguments.
+
+## 12. Pre-merge two-pass review (2026-09-24)
+
+The owner asked for a fresh review of the whole branch before merging, followed by a
+second pass from another vendor's model. It follows OPERATOR's two-pass contract.
+
+- **Pinned:** candidate `2c6d839`, baseline `main` `bd39e12`, in a disposable clone with
+  no remotes.
+- **Pass 1:** a fresh Claude (Opus) subagent. It was given §§1–8 at `2deb7e5`, the
+  decisions and `AGENTS.md`. Withheld: §9 onward, the Phase 3 records, commit messages and
+  review 0. It disclosed seeing five commit subjects, code comments that cite review IDs,
+  and one incidental grep hit.
+- **Pass 2:** GitHub Copilot with GPT-6 Astra, a different vendor and model and a new
+  reviewer. It ran inside the sandbox through the guarded `run-copilot` on the test image,
+  with the Copilot-Requests-only PAT, egress locked to Copilot, and every input mounted
+  read-only. It was given all narrative, review 0, pass 1's packet and pass 1's findings.
+- **Records:** the reports are preserved unedited outside the repository. The lead's
+  dispositions are recorded here.
+
+**Pass 1 findings and dispositions:**
+
+| Finding | Disposition |
+|---|---|
+| **M1.** The stock `~/.bashrc` puts `~/.local/bin` before the wrapper in interactive and login shells, so `claude` there ran the real CLI unguarded (E5). The PATH test used a non-interactive shell. | **Fixed; I reproduced it first.** The Dockerfile moves the installer's link to a root-owned `/usr/local/lib/pera-sandbox/real/claude` and removes `~/.local/bin/claude`. `baked-layout` now checks `bash -ic` and `bash -lc` for both CLIs, that nothing is left in `~/.local/bin`, and the link's owner and target. On the rebuilt test image all three shell modes resolve the wrapper. A guarded session through the moved link ran a Bash call (L12), and nothing recreated `~/.local/bin/claude` afterwards. `claude doctor` now warns that the native installation is not on `PATH`, which is expected (QUICKSTART). |
+| **M2.** No real build (Maven WAR, Karma ChromeHeadless, npm) has run under the mandatory sandbox with no unsandboxed retry. | **Accepted as a deployment gate.** Added to "still to observe": a supervised build and unit-test run in the first real session on the rebuilt image, before E2/E3 count as deployed. It is not run here, because it would write to a registered task workspace. |
+| **L1.** `COPILOT_CLI_DIST_DIR` makes Copilot's loader run `index.js` from another directory. | **Fixed:** it is unset in the wrapper and `run-copilot`, and it is in the fixture's redirect list. |
+| **L2.** Server-managed settings, if the organisation ever configured them, would take precedence over the file policy entirely. | **Documented as a condition** in SECURITY-REVIEW: any organisation-level server-managed settings must carry this policy, or they displace it. The startup check cannot see a runtime fetch. |
+| **L3.** A session killed mid-command can leave an empty placeholder `.mcp.json`, and the next start refuses. | **Documented** in QUICKSTART "Startup refusals": confirm the file is empty, then remove it. Refuse-rather-than-repair stays. |
+| **L4.** Docs overclaimed: the capabilities-held result was presented as observed but was never retained, and "S10 asserts both files exactly" was false for the managed file. | **Fixed:** FAQ and `devcontainer.json` say the result was seen once and not retained. S10 now also compares the whole managed file, and a widened `allowedDomains` fails it. |
+| Instruction files persist unchecked. | Already recorded as a residual. |
+
+**Pass 2 (GPT-6 Astra).** Its report was recovered verbatim from the session's
+`task_complete` event, because `-s` printed nothing. **Limitation:** Copilot's path
+verification denied every read under `/evidence`, since `run-copilot` deliberately does
+not pass `--allow-all-paths`. Pass 2 therefore could not audit the raw live transcripts,
+and says so. Any rerun should put the evidence under the trusted `/workspace`.
+
+| Pass 2 item | Disposition |
+|---|---|
+| Corrected the severity of pass 1's M2, L1, L2 and L3: an outstanding verification obligation, a conditional hygiene risk, runtime composition unresolved, not reproduced | **Accepted.** SECURITY-REVIEW's server-managed condition now says the composition is unverified rather than "replaces the file entirely". |
+| **N1** (medium). A hard link to the canonical `/workspace/.claude/settings.json` passes the regular-file, symlink and byte checks. A later session can then rewrite that inode through the ordinary writable name, and the pathname denies and the sandbox bind do not cover it. Found by reading. | **Fixed:** every validated file must also have exactly one link (`stat -c %h`). The real volume files and workspace settings all have one link. New scenarios `agent-project-hardlink` and `agent-user-hardlink`. Whether sandboxed Bash can create such a link in-session (a cross-mount `link()` should fail with `EXDEV`) is unverified; the startup check refuses one at the next start either way. |
+| **N2** (medium). The QUICKSTART recovery `cp` follows a symlinked `.claude` parent on the host and could overwrite the operator's own `~/.claude/settings.json`. | **Fixed:** the recovery block removes a symlinked `.claude` (the link, not the target), refuses anything that is not a plain directory, and breaks any hard link before copying. |
+| **Extraction.** Decision 4 was the lead's proposal: §5 offered no recommendation, and the owner's "go with your recommendations" preceded it. | **Open for the owner.** It needs explicit confirmation or change. |
+| **Extraction.** L1 required seeing the selected source, skipped sources and rejected keys; §10 claims "met behaviourally". | **Accepted as unmet.** Moved to the rebuilt-image gate: interactive `/status`. |
+| **Extraction.** L3 required "CLI refuses to start". The observed "starts, and Bash fails" is not equivalent, because the in-process tools (Read, Edit, Write, WebFetch) still work, and in an unguarded container the firewall is also open. | **Accepted as unmet. Owner decision needed.** Either accept the residual, now that the E5 wrappers catch every PATH route including interactive shells (§12 M1) and only a by-path or IDE-extension start remains; or add a managed `WebFetch` deny as extra hardening, since it has no use in a locked-down session. Not changed unilaterally. |
+| **Extraction.** L4 required recording direct-start behaviour for all six seeded keys; §10 covers `excludedCommands` and `allowWrite` only. | **Accepted as incomplete.** The other four (`bwrapPath`, a hook, `statusLine`, `apiKeyHelper`) are ignored from project settings by the binary's own lists (§9) and are refused by `run-agent`. Their live characterization joins the rebuilt-image gate. |
+| **Extraction.** Two input rules relax the literal §4.3 table: an absent project `settings.json` is accepted, and an empty or null `mcpServers` in `.claude.json` is accepted. | **Recorded as departures.** **D-10:** an absent project file is harmless under the managed policy, and the legacy and test fixtures rely on it. **D-11:** the real volume's `.claude.json` holds exactly one `mcpServers` entry, and it is empty (counted read-only). Refusing empty entries would refuse the real volume, and an empty map configures nothing. |
+| Narrative overclaims: L8 shell scope; L10 "cannot plant"; the README "outrank everything"; QUICKSTART "`--version` always works"; the overlay "refuses if these change"; the VERIFY-ASSERTIONS directory-wide invisibility claim; probe accounting | **Fixed in the text**, each narrowed to what was observed. The probe accounting: the L4–L6 refusal probes need no login; the L4/L4c/L5 direct-start characterisations did mount the real volume, as decision 4 allows. |
+| The review-0 dispositions: H2's nested-settings refusal and recursive deny not adopted; M2's `CLAUDE_CODE_SAFE_MODE` not unset | **Stand as recorded.** `CLAUDE_CODE_SAFE_MODE` is left alone deliberately: its effect is undetermined, and unsetting an operator's restrictive flag could weaken intent. |
+
+**Gate before E2/E3/E5/N5 count as deployed:**
+- the owner's decisions on decision 4 and L3;
+- the rebuild;
+- on the rebuilt image, L1 (including `/status`), L2–L10, L12 and the remaining L4 keys;
+- a supervised real build and unit-test run.
+
+Security/IT sign-off (C5) remains required for unattended use.

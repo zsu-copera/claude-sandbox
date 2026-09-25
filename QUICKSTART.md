@@ -364,7 +364,8 @@ Both refusals exit 78 and change nothing; the message names the finding and the 
 - **`REFUSED (finding E5)`**: `claude` or `copilot` was started outside `run-agent` /
   `run-copilot`, for example from `podman exec`, a bare shell, or the devcontainer
   (unsupported for agent work). The wrappers require a locked-down container and no
-  capabilities. Start the agent with the step-4 command. `--version` and `--help` always work.
+  capabilities. Start the agent with the step-4 command. `--version` and `--help` on their own
+  still work, except for `copilot` while a package cache is present (below).
 - **`REFUSED (finding N5)`**: an input that persists between sessions is not what the
   image expects, so the next session would inherit a looser policy. A previous agent
   session or a manual edit made the change. Treat it as a review finding, not a nuisance:
@@ -372,8 +373,26 @@ Both refusals exit 78 and change nothing; the message names the finding and the 
   note what you found before restoring. Do not start the CLI some other way to get past it.
   - **Workspace** (`~/pera-sandbox/.claude/settings.json`, `.claude/settings.local.json`,
     `.mcp.json`, or a `.git` at the workspace root): restore the canonical file and remove
-    the others, inside WSL:
-    `cp --remove-destination /mnt/c/work/pera/claude-sandbox/container/claude-project-settings.json ~/pera-sandbox/.claude/settings.json`.
+    the others, inside WSL. A previous session may have replaced `.claude` with a symlink,
+    for example to your own `~/.claude`, and a plain `cp` would follow it and overwrite
+    host files. The block therefore removes a symlinked `.claude` (the link, not its
+    target) and refuses anything that still is not a plain directory:
+
+    ```bash
+    (
+        set -e
+        cd ~/pera-sandbox
+        [ ! -L .claude ] || rm .claude            # a symlink here is itself a finding
+        mkdir -p .claude
+        [ -d .claude ] && [ ! -L .claude ] || { echo ".claude is not a plain directory" >&2; exit 1; }
+        rm -f .claude/settings.json               # breaks any hard link to another name
+        cp /mnt/c/work/pera/claude-sandbox/container/claude-project-settings.json .claude/settings.json
+    )
+    ```
+
+    `rm` on a symlink or hard link removes that name only. For `.mcp.json`, `.git` or
+    `settings.local.json`, remove the entry with `rm -rf` on its exact path, with no
+    trailing slash, so a symlink is not followed.
     A root `.git` makes the workspace a git worktree and moves where Claude reads local
     settings. If you find one, also look for a `.claude/settings.local.json` inside `prj`
     or `Documentation`.
@@ -400,6 +419,17 @@ Both refusals exit 78 and change nothing; the message names the finding and the 
 
 Workspaces assembled before Phase 3 carry the old project settings; `run-agent`
 accepts that exact file, so they need no change.
+
+Two things that look alarming but aren't:
+- **A stale placeholder.** Inside its sandbox, Claude Code shows empty placeholder files for
+  protected names such as `.mcp.json`, and normally removes them afterwards. A session
+  killed mid-command (`podman stop`, out of memory) can leave an **empty**
+  `/workspace/.mcp.json` behind, and the next start refuses. Confirm the file is empty
+  (`wc -c`), then remove it. A non-empty one is a real finding.
+- **A `claude doctor` warning.** It reports that the native installation is not in your
+  `PATH` and suggests `claude install`. That is deliberate: the image removed
+  `~/.local/bin/claude` so that every shell reaches the guarded wrapper. Do not run
+  `claude install`; it would recreate the unguarded link.
 
 The checks assume nothing else writes the workspace or the config volume while a launcher
 starts. Run one agent session per workspace and per login volume at a time.

@@ -1255,13 +1255,33 @@ launchers, the wrapper and their tests:
 The real Copilot 1.0.83 on that image printed its version through the wrapper with
 `--no-auto-update`, and refused (exit 78) once a `~/.copilot/pkg` directory existed.
 
+After the pre-merge pass-1 review (spec §12), the image no longer leaves a `claude` in
+`~/.local/bin`. `baked-layout` now asserts that `bash -ic` and `bash -lc` resolve both CLIs to
+the wrappers, that `~/.local/bin/claude` is absent, and that the real-CLI link is root-owned
+and executable. That condition was observed false on the pre-fix image. Results:
+- `verify-startup`: 42 passed from source; 43 of 43 with `--baked` on the rebuilt test image
+  `4f6bbdc7…`.
+- S10 now also compares the whole managed file: a widened `allowedDomains` fails it, and the
+  mutation was reverted.
+- `verify-startup.sh` now force-removes a scenario container that a timeout left running.
+  One had been left by the FIFO mutation run, and was removed.
+
+After the pre-merge pass-2 review, every validated file must be singly linked. There are new
+`agent-project-hardlink` and `agent-user-hardlink` scenarios, and QUICKSTART has a symlink-safe recovery block.
+Results:
+- `verify-startup`: 44 passed from source; 45 of 45 with `--baked` on the rebuilt test image
+  `945ea49c…`.
+- Mutation M17 (no single-link rule): both hard-link scenarios fail.
+- `verify-scaffold`: 24 passed.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is
   closed.
 - **That the agent cannot read its own auth token.** Before Phase 3 it could, via Bash; the
   settings deny rule covered the Read tool only. On the Phase 3 test image, sandboxed Bash
-  sees no `/home/vscode/.claude` at all (spec §10). That was observed once and is not
+  could not open `/home/vscode/.claude/settings.json`, which the probe reported as absent (spec §10). That is one
+  file in one probe, not proof that the whole directory or the token is unreadable. It was observed once and is not
   asserted by any check; Copilot sessions have no such sandbox.
 - **Anything requiring the dev AS400/Oracle.** Unreachable by design.
 - **Integration tests.** Same reason.

@@ -217,8 +217,9 @@ servers. Any change refuses with exit 78 before the network is touched (recovery
 self-tests that api.anthropic.com is reachable AND example.com is refused — refuses to
 start otherwise), purges `.secrets/` and `~/.npmrc`, schedules allowlist IP refreshes
 every 15 min, then starts `claude --dangerously-skip-permissions` through the guarded
-wrapper. The mandatory policy comes from the image's managed settings, which outrank
-everything the agent can write. First ever run: complete the login flow (auth persists
+wrapper. The mandatory policy comes from the image's managed settings. Their single values
+win and their managed-only locks hold, but list settings still merge from lower scopes,
+which is why the startup checks exist (below). First ever run: complete the login flow (auth persists
 in the `pera-claude-config` volume) and confirm the bypass prompt.
 
 **Firewall refresh and recovery:** the initial installation creates the default-deny

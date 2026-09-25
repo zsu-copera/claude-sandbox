@@ -2,7 +2,8 @@
 // locks down, so the guarded claude/copilot wrappers refuse to start in it. A CLI that
 // bypasses PATH (an IDE extension's bundled copy) is not refused at startup: bubblewrap
 // cannot start while capabilities are held, so every Bash command fails, and the managed
-// policy forbids the unsandboxed retry (observed 2026-09-24, Phase 3 spec L3). Agents run
+// policy forbids the unsandboxed retry (seen once on a test image, 2026-09-24; the console
+// output was not retained, Phase 3 spec L3). Agents run
 // only through run-agent / run-copilot as in QUICKSTART step 4.
 {
     "name": "PERA Claude Sandbox",

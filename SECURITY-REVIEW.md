@@ -24,7 +24,7 @@ settings-precedence work is not delegable without review):
 
 | Item | What is needed |
 |---|---|
-| E2/E3, E5, N5 | **Implemented in source, not deployed** ([Phase 3](#phase-3-inner-sandbox-and-guarded-startup-2026-09-24), spec approved 2026-09-24). Root-owned managed policy, startup checks of the next session's inputs, baked CLIs only, guarded wrappers. Independent review done; its two high findings (H1 Copilot package cache, H2 `/workspace/.git`) are fixed and tested. Live observations on a throwaway test image are recorded (spec §10). Remaining: one coordinated rebuild with the ticket lead, then L1–L10 again on the rebuilt image. Not deployed until then. |
+| E2/E3, E5, N5 | **Implemented in source, not deployed** ([Phase 3](#phase-3-inner-sandbox-and-guarded-startup-2026-09-24), spec approved 2026-09-24). Root-owned managed policy, startup checks of the next session's inputs, baked CLIs only, guarded wrappers. Reviewed three times: review 0, then a pre-merge two-pass review (spec §11–§12). Every high and medium finding is fixed or recorded as a gate. Live observations on a throwaway test image are recorded (spec §10). Remaining: one coordinated rebuild with the ticket lead; then L1–L10 and L12 again on the rebuilt image, plus a supervised real build and unit-test run under the mandatory sandbox. Not deployed until then. **Condition:** if the organisation ever configures server-managed Claude settings, the CLI selects a single source first-wins and may rank them above the managed file. How the locks would combine is unverified, so any such settings must carry this policy. |
 | C5, sign-off | Security/IT sign-off before other developers run unattended. Record it here. |
 
 **Blocking a second developer** (mechanical unless noted):
@@ -704,3 +704,25 @@ Also fixed: a FIFO `.claude.json`, more settings-redirect variables, and the rem
 keys. Accepted: the server-settings companion files and `policy-limits.json`, which can only
 relax organisation limits, and the need to run one session per workspace at a time.
 Still not covered: Copilot's `installed-plugins/` and the rest of `~/.copilot`.
+
+**Pre-merge two-pass review** ([spec §12](design/phase3-inner-sandbox-and-startup.md#12-pre-merge-two-pass-review-2026-09-24)).
+Pass 1 was a fresh Claude reviewer without the narrative. Pass 2 was GPT-6 Astra through
+GitHub Copilot, run inside the sandbox with every input read-only; it could not read the
+raw live transcripts because of Copilot path verification.
+
+Fixed:
+- **Interactive and login shells bypassed the `claude` wrapper.** The stock `~/.bashrc`
+  prepends `~/.local/bin`. The image now leaves no `claude` there.
+- **A hard-link alias passed the settings checks.** Every validated file must now be singly
+  linked.
+- **The documented host recovery followed a planted symlink.**
+- **`COPILOT_CLI_DIST_DIR`** is now unset.
+- **Doc overclaims** are corrected.
+
+Left open for the owner:
+- confirmation of decision 4, which was the lead's proposal;
+- the unmet L3 pass condition: an unguarded start that bypasses PATH is not refused.
+
+Added to the deployment gate:
+- `/status` and the remaining L4 keys on the rebuilt image;
+- a supervised real build and unit-test run.
