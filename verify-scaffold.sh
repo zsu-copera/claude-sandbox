@@ -289,7 +289,7 @@ else
         'Array.isArray(o.allowedMcpServers) && o.allowedMcpServers.length === 0'
     for rule in 'Bash(git push)' 'Bash(git push *)' 'Read(//workspace/.secrets/**)' \
                 'Read(//home/vscode/.claude/**)' 'Edit(//workspace/.claude/**)' 'Edit(//home/vscode/.claude/**)' \
-                'Edit(//workspace/.mcp.json)'; do
+                'Edit(//workspace/.mcp.json)' 'WebFetch' 'WebSearch'; do
         chk "deny:$rule" "any(.permissions.deny[]; . == \"$rule\")" "o.permissions.deny.includes(\"$rule\")"
     done
     # Sessions run in bypass mode by design; a lock here would stop every launch.
@@ -307,7 +307,7 @@ else
     # The whole managed file, too: the checks above name the guardrails, but a widened list
     # (allowedDomains, allowWrite, an extra key) must also fail. Changing the policy means
     # changing this line in the same reviewed diff.
-    m_expected='{"permissions":{"deny":["Bash(git push)","Bash(git push *)","Read(//workspace/.secrets/**)","Read(//home/vscode/.claude/**)","Edit(//home/vscode/.claude/**)","Edit(//workspace/.claude/**)","Edit(//workspace/.mcp.json)"]},"allowManagedPermissionRulesOnly":true,"allowManagedHooksOnly":true,"allowManagedMcpServersOnly":true,"allowedMcpServers":[],"strictKnownMarketplaces":[],"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false,"bwrapPath":"/usr/bin/bwrap","enableWeakerNestedSandbox":false,"enableWeakerNetworkIsolation":false,"filesystem":{"allowWrite":["/tmp"],"allowManagedReadPathsOnly":true},"network":{"allowedDomains":["api.anthropic.com"],"allowManagedDomainsOnly":true,"strictAllowlist":true}}}'
+    m_expected='{"permissions":{"deny":["Bash(git push)","Bash(git push *)","Read(//workspace/.secrets/**)","Read(//home/vscode/.claude/**)","Edit(//home/vscode/.claude/**)","Edit(//workspace/.claude/**)","Edit(//workspace/.mcp.json)","WebFetch","WebSearch"]},"allowManagedPermissionRulesOnly":true,"allowManagedHooksOnly":true,"allowManagedMcpServersOnly":true,"allowedMcpServers":[],"strictKnownMarketplaces":[],"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false,"bwrapPath":"/usr/bin/bwrap","enableWeakerNestedSandbox":false,"enableWeakerNetworkIsolation":false,"filesystem":{"allowWrite":["/tmp"],"allowManagedReadPathsOnly":true},"network":{"allowedDomains":["api.anthropic.com"],"allowManagedDomainsOnly":true,"strictAllowlist":true}}}'
     case "$JSON_TOOL" in
         jq)   m_actual=$(jq -c . "$m" 2>/dev/null) ;;
         node) m_actual=$(node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))))' "$m" 2>/dev/null) ;;

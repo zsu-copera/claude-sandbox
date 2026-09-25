@@ -660,7 +660,7 @@ departures (D-1 to D-9). **Implemented in source, not deployed.**
 
 | Finding | Outcome in source |
 |---|---|
-| E2/E3 | `container/claude-managed-settings.json` is baked root-owned to `/etc/claude-code/managed-settings.json`, with an empty root-owned `managed-settings.d/`. It requires the sandbox (`failIfUnavailable`, `allowUnsandboxedCommands: false`, `bwrapPath`, weaker modes off) and holds the deny rules. It locks lower-scope permission rules, hooks and MCP servers (`allowedMcpServers: []`) and keeps network domains managed-only. `allowWrite` stays `["/tmp"]`. S10 now asserts this file. |
+| E2/E3 | `container/claude-managed-settings.json` is baked root-owned to `/etc/claude-code/managed-settings.json`, with an empty root-owned `managed-settings.d/`. It requires the sandbox (`failIfUnavailable`, `allowUnsandboxedCommands: false`, `bwrapPath`, weaker modes off) and holds the deny rules, including denies for the `WebFetch` and `WebSearch` tools (owner decision 2026-09-25, spec §13). It locks lower-scope permission rules, hooks and MCP servers (`allowedMcpServers: []`) and keeps network domains managed-only. `allowWrite` stays `["/tmp"]`. S10 now asserts this file. |
 | N5 | The launchers run only the image-baked CLIs; prepare no longer stages CLIs and deletes an old `.agent-cli/`. Before lockdown, `run-agent` refuses (exit 78) when: the project settings differ from the canonical file or the legacy hash; `settings.local.json` or `.mcp.json` exists; the user settings hold a key outside the reviewed allowlist; `remote-settings.json` is anything but `[]`/`{}`; or `.claude.json` configures MCP servers. It unsets the five managed-policy redirect variables. Managed `Edit` denies keep the file tools off both settings stores during a session. |
 | E5 | Root-owned wrappers `/usr/local/lib/pera-sandbox/bin/{claude,copilot}`, first on `PATH`, refuse unless the root-owned lockdown record exists and all four capability sets are empty. Otherwise they exec the baked CLI; `--version`/`--help` alone pass through. The devcontainer is marked unsupported for agent work. |
 
@@ -681,7 +681,8 @@ Copilot's `~/.copilot` configuration; and operator-supplied launcher arguments s
   with `dangerouslyDisableSandbox`. DNS and egress are closed inside the sandbox. The
   wrappers refuse. The agent cannot write its project settings from Bash or the Write tool.
 - **L3:** with capabilities held, the CLI still starts and every Bash call fails. Nothing
-  runs unsandboxed, but there is no start-time refusal.
+  runs unsandboxed, but there is no start-time refusal. The owner chose to deny the web
+  tools rather than accept that (spec §13); the file tools remain a residual.
 - **L4c:** a project `allowWrite` **does** merge past the managed policy and widen writes.
   That confirms N5's premise for lists. A project `excludedCommands` did not escape the
   sandbox (L4).
@@ -720,8 +721,9 @@ Fixed:
 - **Doc overclaims** are corrected.
 
 Left open for the owner:
-- confirmation of decision 4, which was the lead's proposal;
-- the unmet L3 pass condition: an unguarded start that bypasses PATH is not refused.
+- confirmation of decision 4, which was the lead's proposal.
+
+Decided 2026-09-25: L3 is answered with managed `WebFetch` and `WebSearch` denies (spec §13).
 
 Added to the deployment gate:
 - `/status` and the remaining L4 keys on the rebuilt image;

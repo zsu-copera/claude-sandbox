@@ -7,7 +7,9 @@
             "Read(//home/vscode/.claude/**)",
             "Edit(//home/vscode/.claude/**)",
             "Edit(//workspace/.claude/**)",
-            "Edit(//workspace/.mcp.json)"
+            "Edit(//workspace/.mcp.json)",
+            "WebFetch",
+            "WebSearch"
         ]
     },
     "allowManagedPermissionRulesOnly": true,

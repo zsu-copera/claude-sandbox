@@ -363,16 +363,41 @@ and says so. Any rerun should put the evidence under the trusted `/workspace`.
 | **N2** (medium). The QUICKSTART recovery `cp` follows a symlinked `.claude` parent on the host and could overwrite the operator's own `~/.claude/settings.json`. | **Fixed:** the recovery block removes a symlinked `.claude` (the link, not the target), refuses anything that is not a plain directory, and breaks any hard link before copying. |
 | **Extraction.** Decision 4 was the lead's proposal: §5 offered no recommendation, and the owner's "go with your recommendations" preceded it. | **Open for the owner.** It needs explicit confirmation or change. |
 | **Extraction.** L1 required seeing the selected source, skipped sources and rejected keys; §10 claims "met behaviourally". | **Accepted as unmet.** Moved to the rebuilt-image gate: interactive `/status`. |
-| **Extraction.** L3 required "CLI refuses to start". The observed "starts, and Bash fails" is not equivalent, because the in-process tools (Read, Edit, Write, WebFetch) still work, and in an unguarded container the firewall is also open. | **Accepted as unmet. Owner decision needed.** Either accept the residual, now that the E5 wrappers catch every PATH route including interactive shells (§12 M1) and only a by-path or IDE-extension start remains; or add a managed `WebFetch` deny as extra hardening, since it has no use in a locked-down session. Not changed unilaterally. |
+| **Extraction.** L3 required "CLI refuses to start". The observed "starts, and Bash fails" is not equivalent, because the in-process tools (Read, Edit, Write, WebFetch) still work, and in an unguarded container the firewall is also open. | **Accepted as unmet. Owner decision needed.** Either accept the residual, now that the E5 wrappers catch every PATH route including interactive shells (§12 M1) and only a by-path or IDE-extension start remains; or add a managed `WebFetch` deny as extra hardening, since it has no use in a locked-down session. Not changed unilaterally. **Decided 2026-09-25 (§13):** managed denies for `WebFetch` and `WebSearch`. |
 | **Extraction.** L4 required recording direct-start behaviour for all six seeded keys; §10 covers `excludedCommands` and `allowWrite` only. | **Accepted as incomplete.** The other four (`bwrapPath`, a hook, `statusLine`, `apiKeyHelper`) are ignored from project settings by the binary's own lists (§9) and are refused by `run-agent`. Their live characterization joins the rebuilt-image gate. |
 | **Extraction.** Two input rules relax the literal §4.3 table: an absent project `settings.json` is accepted, and an empty or null `mcpServers` in `.claude.json` is accepted. | **Recorded as departures.** **D-10:** an absent project file is harmless under the managed policy, and the legacy and test fixtures rely on it. **D-11:** the real volume's `.claude.json` holds exactly one `mcpServers` entry, and it is empty (counted read-only). Refusing empty entries would refuse the real volume, and an empty map configures nothing. |
 | Narrative overclaims: L8 shell scope; L10 "cannot plant"; the README "outrank everything"; QUICKSTART "`--version` always works"; the overlay "refuses if these change"; the VERIFY-ASSERTIONS directory-wide invisibility claim; probe accounting | **Fixed in the text**, each narrowed to what was observed. The probe accounting: the L4–L6 refusal probes need no login; the L4/L4c/L5 direct-start characterisations did mount the real volume, as decision 4 allows. |
 | The review-0 dispositions: H2's nested-settings refusal and recursive deny not adopted; M2's `CLAUDE_CODE_SAFE_MODE` not unset | **Stand as recorded.** `CLAUDE_CODE_SAFE_MODE` is left alone deliberately: its effect is undetermined, and unsetting an operator's restrictive flag could weaken intent. |
 
 **Gate before E2/E3/E5/N5 count as deployed:**
-- the owner's decisions on decision 4 and L3;
+- the owner's decision on decision 4 (L3 is decided, §13);
 - the rebuild;
 - on the rebuilt image, L1 (including `/status`), L2–L10, L12 and the remaining L4 keys;
 - a supervised real build and unit-test run.
 
 Security/IT sign-off (C5) remains required for unattended use.
+
+## 13. Owner decisions after the review (2026-09-25)
+
+**L3: deny the web tools.** The owner chose managed denies for both `WebFetch` and
+`WebSearch`, over accepting the residual or denying `WebFetch` alone.
+
+- **Why both.** Every guarded session on the test image was offered both tools (all seven
+  retained transcripts). `WebFetch` runs from the container, so the firewall already makes
+  it useless in a guarded session; the deny closes it for an unguarded start, where the
+  network is usually open. `WebSearch` is understood to run on the provider's side, where
+  the container firewall would not reach it, so a query could carry workspace content out
+  of a **guarded** session too. That understanding is unverified: no search was run in a
+  locked session, and whether search is enabled for the organisation is unknown.
+- **Change:** the two bare tool names join the managed `permissions.deny`. S10 checks
+  both, and its whole-file comparison changes with them. The project file is unchanged:
+  D-9 repeats only the old deny rules.
+- **Observed, without a login:** on the test image with this file mounted over the baked
+  policy, a direct `-p` start under `--network=none` offered 19 tools instead of 21. The two
+  web tools were the only ones missing. This is not a rebuilt-image observation.
+- **L3's pass condition** is rewritten, since no setting makes the CLI refuse to start and
+  no wrapper can intercept a start by path: *an unguarded start runs nothing unsandboxed
+  and offers no web tools.* To observe on the rebuilt image. The file tools still work in
+  such a start, and that stays a documented residual.
+
+**Decision 4** is still open.
