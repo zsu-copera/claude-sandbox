@@ -304,6 +304,15 @@ else
         '. == {"permissions":{"defaultMode":"bypassPermissions","deny":["Bash(git push)","Bash(git push *)","Read(//workspace/.secrets/**)","Read(//home/vscode/.claude/**)"]},"sandbox":{"enabled":true,"filesystem":{"allowWrite":["/tmp"]},"network":{"allowedDomains":["api.anthropic.com"]}}}' \
         'JSON.stringify(o) === JSON.stringify({permissions:{defaultMode:"bypassPermissions",deny:["Bash(git push)","Bash(git push *)","Read(//workspace/.secrets/**)","Read(//home/vscode/.claude/**)"]},sandbox:{enabled:true,filesystem:{allowWrite:["/tmp"]},network:{allowedDomains:["api.anthropic.com"]}}})' \
         || s10_bad="$s10_bad project-settings-changed"
+    # The whole managed file, too: the checks above name the guardrails, but a widened list
+    # (allowedDomains, allowWrite, an extra key) must also fail. Changing the policy means
+    # changing this line in the same reviewed diff.
+    m_expected='{"permissions":{"deny":["Bash(git push)","Bash(git push *)","Read(//workspace/.secrets/**)","Read(//home/vscode/.claude/**)","Edit(//home/vscode/.claude/**)","Edit(//workspace/.claude/**)","Edit(//workspace/.mcp.json)"]},"allowManagedPermissionRulesOnly":true,"allowManagedHooksOnly":true,"allowManagedMcpServersOnly":true,"allowedMcpServers":[],"strictKnownMarketplaces":[],"sandbox":{"enabled":true,"failIfUnavailable":true,"allowUnsandboxedCommands":false,"bwrapPath":"/usr/bin/bwrap","enableWeakerNestedSandbox":false,"enableWeakerNetworkIsolation":false,"filesystem":{"allowWrite":["/tmp"],"allowManagedReadPathsOnly":true},"network":{"allowedDomains":["api.anthropic.com"],"allowManagedDomainsOnly":true,"strictAllowlist":true}}}'
+    case "$JSON_TOOL" in
+        jq)   m_actual=$(jq -c . "$m" 2>/dev/null) ;;
+        node) m_actual=$(node -e 'console.log(JSON.stringify(JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"))))' "$m" 2>/dev/null) ;;
+    esac
+    [ "$m_actual" = "$m_expected" ] || s10_bad="$s10_bad managed-file-differs-from-reviewed-policy"
     unset -f chk
     [ -z "$s10_bad" ] && pass S10 "managed policy requires the sandbox, locks lower scopes, keeps deny rules and /tmp" \
                       || fail S10 "a guardrail was removed from the managed policy or project settings" "missing/changed:$s10_bad"
@@ -530,7 +539,8 @@ unset -f has
 dockerfile_code=$(code_only "$df")
 for needle in 'mkdir -p /etc/claude-code/managed-settings.d' 'chown -R root:root /etc/claude-code' \
               'chmod 0644 /etc/claude-code/managed-settings.json' 'ln -s claude /usr/local/lib/pera-sandbox/bin/copilot' \
-              'chown -R root:root /usr/local/lib/pera-sandbox'; do
+              'chown -R root:root /usr/local/lib/pera-sandbox' \
+              'ln -s "$target" /usr/local/lib/pera-sandbox/real/claude' 'rm /home/vscode/.local/bin/claude'; do
     echo "$dockerfile_code" | grep -qF -- "$needle" || s25_bad="$s25_bad missing:$needle"
 done
 last_path=$(echo "$dockerfile_code" | grep -oE 'PATH=[^ ]+' | tail -1)
@@ -544,7 +554,7 @@ grep -qF 'cp "$SCAFFOLD/container/claude-project-settings.json" "$SANDBOX_ROOT/.
     || s25_bad="$s25_bad assembly-not-canonical"
 g=container/agent-cli-guard.sh
 wrapper_code=$(code_only "$g")
-for line in '    claude)  real=/home/vscode/.local/bin/claude; pre=() ;;' \
+for line in '    claude)  real=/usr/local/lib/pera-sandbox/real/claude; pre=() ;;' \
             '    copilot) real=/usr/local/bin/copilot;         pre=(--no-auto-update) ;;' \
             'lock=/run/claude-lockdown-domains' 'exec "$real" "${pre[@]}" "$@"' \
             '    export COPILOT_AUTO_UPDATE=false' '    pkg="$HOME/.copilot/pkg"'; do
@@ -572,7 +582,7 @@ grep -qxF 'USER_KEYS='\''["$schema","effortLevel","language","model","outputStyl
     || s26_bad="$s26_bad user-allowlist-changed"
 ra_code=$(code_only "$ra")
 for needle in '"$WS/.claude/settings.local.json" "$WS/.mcp.json" "$WS/.git"' 'remote-settings.json' 'mcpServers' \
-              'LEGACY_PROJECT_SHA=' 'cmp -s -- "$p" "$CANONICAL"'; do
+              'LEGACY_PROJECT_SHA=' 'cmp -s -- "$p" "$CANONICAL"' '[ "$(stat -c %h -- "$1")" = 1 ]'; do
     echo "$ra_code" | grep -qF -- "$needle" || s26_bad="$s26_bad no-check:$needle"
 done
 l_check=$(line_of "$ra" '^for c in "\$CONFIG/.claude.json"')

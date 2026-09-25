@@ -16,7 +16,7 @@ REDIRECTS=(CLAUDE_CODE_MANAGED_SETTINGS_PATH CLAUDE_CODE_REMOTE_SETTINGS_PATH CL
            CLAUDE_CODE_DISABLE_ADMIN_ENV_UNION CLAUDE_CODE_SUBPROCESS_ENV_SCRUB CLAUDE_CODE_USE_COWORK_PLUGINS
            CLAUDE_CODE_PROVIDER_MANAGED_BY_HOST CLAUDE_CODE_BRIDGE_CHILD_MACHINE_SETTINGS CLAUDE_PROJECT_DIR
            GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR)
-COPILOT_REDIRECTS=(COPILOT_HOME COPILOT_CACHE_HOME COPILOT_PKG_CACHE_HOME COPILOT_CLI_VERSION)
+COPILOT_REDIRECTS=(COPILOT_HOME COPILOT_CACHE_HOME COPILOT_PKG_CACHE_HOME COPILOT_CLI_VERSION COPILOT_CLI_DIST_DIR)
 die() { echo "ASSERT($SC): $*" >&2; [ -f "$R/out" ] && sed 's/^/    | /' "$R/out" >&2; exit 1; }
 
 install -d -m 0755 "$R" /opt/p3bin
@@ -47,7 +47,12 @@ echo "fake CLI ran: $0"
 EOF
 printf '#!/bin/bash\necho "$*" >> /run/p3/sudo-calls\n' > /opt/p3bin/sudo
 chmod 0755 /opt/p3bin/fake-cli /opt/p3bin/sudo
-ln -sfn /opt/p3bin/fake-cli /home/vscode/.local/bin/claude
+# The baked link is recorded before the recorder replaces it, for baked-layout.
+REAL=/usr/local/lib/pera-sandbox/real/claude
+ORIG_REAL_TARGET=$(readlink -f "$REAL" 2>/dev/null || true)
+ORIG_REAL_OWNER=$(stat -c %u -- "$REAL" 2>/dev/null || true)
+install -d -m 0755 /usr/local/lib/pera-sandbox/real
+ln -sfn /opt/p3bin/fake-cli "$REAL"
 ln -sfn /opt/p3bin/fake-cli /usr/local/bin/copilot
 
 W=/workspace C=/home/vscode/.claude
@@ -97,6 +102,9 @@ case "$SC" in
     agent-claudejson-project)       echo '{"projects":{"/workspace":{"mcpServers":{"x":{"command":"sh"}}}}}' > "$C/.claude.json" ;;
     agent-claudejson-unparseable)   echo '{"projects":' > "$C/.claude.json" ;;
     agent-claudejson-fifo)          mkfifo "$C/.claude.json" ;;
+    agent-project-hardlink)         mkdir -p "$W/.claude"; cp /usr/local/share/pera-sandbox/claude-project-settings.json "$W/.claude/settings.json"
+                                    ln "$W/.claude/settings.json" "$W/notes.json" ;;
+    agent-user-hardlink)            user "{\"model\":\"opus\"}"; ln "$C/settings.json" "$C/alias.json" ;;
     agent-workspace-git)            printf 'gitdir: prj/.git\n' > "$W/.git" ;;
     agent-workspace-git-dir)        mkdir -p "$W/.git" ;;
     copilot-pkg-wrapper|copilot-pkg-launcher) lock; mkdir -p /home/vscode/.copilot/pkg/linux-x64/99.0.0 ;;
@@ -143,13 +151,14 @@ no_update() { grep -qx 'COPILOT_AUTO_UPDATE=false' "$R/cli-env" || die "COPILOT_
 case "$SC" in
     agent-legacy|agent-canonical|agent-absent)
         as_agent bash /usr/local/bin/run-agent --probe 'with space' > "$R/out" 2>&1 || rc=$?
-        ran /home/vscode/.local/bin/claude
+        ran /usr/local/lib/pera-sandbox/real/claude
         mapfile -d '' -t args < "$R/cli-args"
         [ "${#args[@]}" = 3 ] && [ "${args[0]}" = --dangerously-skip-permissions ] \
             && [ "${args[1]}" = --probe ] && [ "${args[2]}" = 'with space' ] || die "arguments not preserved: ${args[*]}"
         [ "$(head -1 "$R/sudo-calls")" = "/usr/local/bin/init-firewall.sh lockdown" ] || die "lockdown not called first"
         [ ! -e "$W/.secrets" ] || die "credentials not purged after lockdown" ;;
-    agent-project-symlink)          as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "is not a regular file" ;;
+    agent-project-hardlink|agent-user-hardlink) as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "is not a regular, singly linked file" ;;
+    agent-project-symlink)          as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "is not a regular, singly linked file" ;;
     agent-claude-dir-symlink)       as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "is not a plain directory" ;;
     agent-project-*)                as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "differs from the canonical project settings" ;;
     agent-settings-local|agent-mcp-json|agent-workspace-git|agent-workspace-git-dir) as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "must not exist" ;;
@@ -160,20 +169,20 @@ case "$SC" in
     agent-claudejson-fifo)          timeout 20 setpriv --reuid 1000 --regid 1000 --init-groups --inh-caps=-all --ambient-caps=-all \
                                         env -i HOME=/home/vscode CLAUDE_CONFIG_DIR="$C" PATH="$AGENT_PATH" bash /usr/local/bin/run-agent \
                                         > "$R/out" 2>&1 || rc=$?
-                                    n5_refused "is not a regular file" ;;
+                                    n5_refused "is not a regular, singly linked file" ;;
     agent-claudejson-*)             as_agent bash /usr/local/bin/run-agent > "$R/out" 2>&1 || rc=$?; n5_refused "configures MCP servers" ;;
     wrapper-bare|wrapper-lock-not-root|wrapper-lock-symlink|wrapper-lock-dir)
         as_agent claude -p probe > "$R/out" 2>&1 || rc=$?; refused "REFUSED (finding E5): claude cannot start before" ;;
     wrapper-version-plus-args)
         as_agent claude --version -p probe > "$R/out" 2>&1 || rc=$?; refused "REFUSED (finding E5)" ;;
     wrapper-bare-version)
-        as_agent claude --version > "$R/out" 2>&1 || rc=$?; ran /home/vscode/.local/bin/claude
+        as_agent claude --version > "$R/out" 2>&1 || rc=$?; ran /usr/local/lib/pera-sandbox/real/claude
         as_agent copilot -h >> "$R/out" 2>&1 || rc=$?; ran "/usr/local/bin/copilot --no-auto-update -h"; no_update ;;
     wrapper-caps-held)
         # Root in this container still holds SETUID, SETGID and others.
         env PATH="$AGENT_PATH" claude -p probe > "$R/out" 2>&1 || rc=$?; refused "while holding capabilities" ;;
     wrapper-guarded)
-        as_agent claude -p probe > "$R/out" 2>&1 || rc=$?; ran "/home/vscode/.local/bin/claude -p probe" ;;
+        as_agent claude -p probe > "$R/out" 2>&1 || rc=$?; ran "/usr/local/lib/pera-sandbox/real/claude -p probe" ;;
     wrapper-unknown-name)
         as_agent other -p probe > "$R/out" 2>&1 || rc=$?; refused "installed under an unknown name" ;;
     copilot-bare)
@@ -199,6 +208,17 @@ case "$SC" in
     baked-layout)
         [ "$(as_agent sh -c 'command -v claude')" = /usr/local/lib/pera-sandbox/bin/claude ] || die "claude is not the wrapper on PATH"
         [ "$(as_agent sh -c 'command -v copilot')" = /usr/local/lib/pera-sandbox/bin/copilot ] || die "copilot is not the wrapper on PATH"
+        # Interactive and login shells source ~/.bashrc, which prepends ~/.local/bin (pass-1 M1).
+        for mode in -ic -lc; do
+            for cli in claude copilot; do
+                got=$(as_agent bash $mode "command -v $cli" 2>/dev/null | tail -1)
+                [ "$got" = "/usr/local/lib/pera-sandbox/bin/$cli" ] || die "bash $mode resolves $cli to $got"
+            done
+        done
+        [ ! -e /home/vscode/.local/bin/claude ] && [ ! -L /home/vscode/.local/bin/claude ] \
+            || die "an unguarded claude is still in ~/.local/bin"
+        [ "$ORIG_REAL_OWNER" = 0 ] || die "the real-claude link is not root-owned ($ORIG_REAL_OWNER)"
+        [ -x "$ORIG_REAL_TARGET" ] || die "the real-claude link does not resolve to an executable ($ORIG_REAL_TARGET)"
         for f in /etc/claude-code/managed-settings.json /usr/local/share/pera-sandbox/claude-project-settings.json; do
             [ "$(stat -c '%u %g %a' "$f")" = "0 0 644" ] || die "$f is not root:root 0644"
         done

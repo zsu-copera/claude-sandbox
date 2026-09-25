@@ -39,7 +39,7 @@ unset GH_TOKEN GITHUB_TOKEN
 # agent-writable volume. The guarded wrapper adds --no-auto-update to every call; a cache
 # left there refuses here, before any network change, so a human sees it.
 export COPILOT_AUTO_UPDATE=false
-unset COPILOT_HOME COPILOT_CACHE_HOME COPILOT_PKG_CACHE_HOME COPILOT_CLI_VERSION
+unset COPILOT_HOME COPILOT_CACHE_HOME COPILOT_PKG_CACHE_HOME COPILOT_CLI_VERSION COPILOT_CLI_DIST_DIR
 if [ -e "$COPILOT_DIR/pkg" ] || [ -L "$COPILOT_DIR/pkg" ]; then
     echo "==> REFUSED (finding N5): $COPILOT_DIR/pkg exists; a package there would run instead of the baked CLI." >&2
     echo "    Inspect it, then remove it; see QUICKSTART \"Startup refusals\"." >&2

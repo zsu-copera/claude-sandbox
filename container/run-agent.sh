@@ -45,13 +45,15 @@ refuse_n5() {
     exit 78
 }
 absent()  { [ ! -e "$1" ] && [ ! -L "$1" ]; }
-regular() { [ -f "$1" ] && [ ! -L "$1" ]; }
+# One link only: a second hard link elsewhere in /workspace would be a writable alias that
+# the pathname-based denies and the sandbox bind do not cover (pre-merge review, pass 2 N1).
+regular() { [ -f "$1" ] && [ ! -L "$1" ] && [ "$(stat -c %h -- "$1")" = 1 ]; }
 for d in "$WS/.claude" "$CONFIG"; do
     absent "$d" || { [ -d "$d" ] && [ ! -L "$d" ]; } || refuse_n5 "$d is not a plain directory"
 done
 p="$WS/.claude/settings.json"
 if ! absent "$p"; then
-    regular "$p" || refuse_n5 "$p is not a regular file"
+    regular "$p" || refuse_n5 "$p is not a regular, singly linked file"
     cmp -s -- "$p" "$CANONICAL" || [ "$(sha256sum < "$p")" = "$LEGACY_PROJECT_SHA  -" ] \
         || refuse_n5 "$p differs from the canonical project settings ($CANONICAL)"
 fi
@@ -63,7 +65,7 @@ for f in "$WS/.claude/settings.local.json" "$WS/.mcp.json" "$WS/.git"; do
 done
 u="$CONFIG/settings.json"
 if ! absent "$u"; then
-    regular "$u" || refuse_n5 "$u is not a regular file"
+    regular "$u" || refuse_n5 "$u is not a regular, singly linked file"
     extra=$(jq -r --argjson ok "$USER_KEYS" \
         'if type == "object" then keys - $ok | join(" ") else error("not an object") end' "$u" 2>/dev/null) \
         || refuse_n5 "$u does not parse as a JSON object"
@@ -76,7 +78,7 @@ if ! absent "$r"; then
 fi
 for c in "$CONFIG/.claude.json" "$HOME/.claude.json"; do
     absent "$c" && continue
-    regular "$c" || refuse_n5 "$c is not a regular file"
+    regular "$c" || refuse_n5 "$c is not a regular, singly linked file"
     n=$(jq '[.. | objects | select(has("mcpServers")) | .mcpServers | select(. != {} and . != null)] | length' \
         "$c" 2>/dev/null) || refuse_n5 "$c does not parse"
     [ "$n" = 0 ] || refuse_n5 "$c configures MCP servers"

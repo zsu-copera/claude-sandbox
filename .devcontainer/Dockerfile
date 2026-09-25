@@ -164,9 +164,20 @@ RUN sed -i 's/\r$//' /usr/local/lib/pera-sandbox/bin/claude \
 # versions and models therefore need an image rebuild.
 USER vscode
 RUN curl -fsSL https://claude.ai/install.sh | bash
+# Leave no `claude` in ~/.local/bin (E5): the stock ~/.bashrc puts that directory back in
+# front of the wrapper in every interactive or login shell, where `claude` would then run
+# the real CLI unguarded (Phase 3 review, pass 1 M1). The installer's link moves to a
+# root-owned path that only the wrapper execs; the versioned binary stays where it is.
+USER root
+RUN target=$(readlink -f /home/vscode/.local/bin/claude) \
+    && [ -x "$target" ] \
+    && install -d -m 0755 -o root -g root /usr/local/lib/pera-sandbox/real \
+    && ln -s "$target" /usr/local/lib/pera-sandbox/real/claude \
+    && rm /home/vscode/.local/bin/claude
+USER vscode
 # CLAUDE_CONFIG_DIR: keep ALL login/config state (incl. .claude.json, which otherwise
 # lives at ~/.claude.json in the ephemeral container fs) inside the mounted
 # pera-claude-config volume, so auth survives container exits.
-# The wrapper directory must stay ahead of ~/.local/bin (verify-scaffold S25).
-ENV PATH=/usr/local/lib/pera-sandbox/bin:/home/vscode/.local/bin:$PATH \
+# The wrapper directory must come first on PATH (verify-scaffold S25).
+ENV PATH=/usr/local/lib/pera-sandbox/bin:$PATH \
     CLAUDE_CONFIG_DIR=/home/vscode/.claude

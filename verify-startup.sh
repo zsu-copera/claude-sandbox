@@ -34,7 +34,7 @@ SCENARIOS=(
     agent-user-hooks agent-user-statusLine agent-user-apiKeyHelper agent-user-env agent-user-sandbox
     agent-user-unparseable agent-user-array agent-remote-permissive
     agent-claudejson-top agent-claudejson-project agent-claudejson-unparseable agent-claudejson-fifo
-    agent-workspace-git agent-workspace-git-dir
+    agent-workspace-git agent-workspace-git-dir agent-project-hardlink agent-user-hardlink
     wrapper-bare wrapper-bare-version wrapper-version-plus-args wrapper-lock-not-root
     wrapper-lock-symlink wrapper-lock-dir wrapper-caps-held wrapper-guarded wrapper-unknown-name
     copilot-bare copilot-guarded copilot-launcher copilot-pkg-wrapper copilot-pkg-launcher baked-layout
@@ -54,6 +54,11 @@ for sc in "${SCENARIOS[@]}"; do
         --volume "$ROOT/container:/opt/src:ro" --volume "$ROOT/tests/startup:/opt/fx:ro" \
         --entrypoint bash "$IMAGE" /opt/fx/scenario.sh "${BAKED[@]}" "$sc" 2>&1)
     status=$?
+    # A scenario that hangs is killed by timeout, which stops the podman client, not the
+    # container; remove it explicitly, as verify-firewall.sh does.
+    if podman container exists "$ACTIVE"; then
+        podman rm --force --time 0 "$ACTIVE" >/dev/null || { echo "FAIL cleanup: $ACTIVE"; exit 1; }
+    fi
     ACTIVE=""
     case "$status" in
         0)  PASS=$((PASS + 1)); echo "PASS $sc" ;;

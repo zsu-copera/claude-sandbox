@@ -21,7 +21,7 @@ refuse() {   # $1 = finding, $2 = reason
     exit 78
 }
 case "$name" in
-    claude)  real=/home/vscode/.local/bin/claude; pre=() ;;
+    claude)  real=/usr/local/lib/pera-sandbox/real/claude; pre=() ;;
     copilot) real=/usr/local/bin/copilot;         pre=(--no-auto-update) ;;
     *) echo "agent-cli-guard: installed under an unknown name: $name" >&2; exit 78 ;;
 esac
@@ -42,7 +42,7 @@ if [ "$name" = copilot ]; then
     # --version, which run-copilot calls) makes it run the baked version; a cache left
     # there refuses the start so a human sees it.
     export COPILOT_AUTO_UPDATE=false
-    unset COPILOT_HOME COPILOT_CACHE_HOME COPILOT_PKG_CACHE_HOME COPILOT_CLI_VERSION
+    unset COPILOT_HOME COPILOT_CACHE_HOME COPILOT_PKG_CACHE_HOME COPILOT_CLI_VERSION COPILOT_CLI_DIST_DIR
     pkg="$HOME/.copilot/pkg"
     { [ ! -e "$pkg" ] && [ ! -L "$pkg" ]; } \
         || refuse N5 "cannot start while a package cache exists at $pkg (a newer package there would run instead of the baked CLI)"
