@@ -224,6 +224,11 @@ exec the real CLI inside an already-guarded container.
 
   `excludedCommands` and `allowWrite` are honoured from project settings. Both the
   project byte comparison and the user-settings allowlist are therefore needed.
+
+  **Corrected in §14:** a live probe on 2.1.282 ran a project `apiKeyHelper` outside the
+  sandbox, so this reading of the binary's lists was wrong for that key at least. What
+  the list gates is unknown. Treat every key in it as honoured from project settings; the
+  byte comparison is the barrier.
 - Settings `env` cannot set `CLAUDE_CODE_MANAGED_SETTINGS_PATH`: it is on the CLI's
   ignored-env list.
 - `allowManagedMcpServersOnly` only restricts which *allowlist* applies, and an absent
@@ -365,7 +370,7 @@ and says so. Any rerun should put the evidence under the trusted `/workspace`.
 | **Extraction.** Decision 4 was the lead's proposal: §5 offered no recommendation, and the owner's "go with your recommendations" preceded it. | **Open for the owner.** It needs explicit confirmation or change. **Decided 2026-09-25 (§13):** option C, a split between the real volume and a throwaway sign-in. |
 | **Extraction.** L1 required seeing the selected source, skipped sources and rejected keys; §10 claims "met behaviourally". | **Accepted as unmet.** Moved to the rebuilt-image gate: interactive `/status`. |
 | **Extraction.** L3 required "CLI refuses to start". The observed "starts, and Bash fails" is not equivalent, because the in-process tools (Read, Edit, Write, WebFetch) still work, and in an unguarded container the firewall is also open. | **Accepted as unmet. Owner decision needed.** Either accept the residual, now that the E5 wrappers catch every PATH route including interactive shells (§12 M1) and only a by-path or IDE-extension start remains; or add a managed `WebFetch` deny as extra hardening, since it has no use in a locked-down session. Not changed unilaterally. **Decided 2026-09-25 (§13):** managed denies for `WebFetch` and `WebSearch`. |
-| **Extraction.** L4 required recording direct-start behaviour for all six seeded keys; §10 covers `excludedCommands` and `allowWrite` only. | **Accepted as incomplete.** The other four (`bwrapPath`, a hook, `statusLine`, `apiKeyHelper`) are ignored from project settings by the binary's own lists (§9) and are refused by `run-agent`. Their live characterization joins the rebuilt-image gate. |
+| **Extraction.** L4 required recording direct-start behaviour for all six seeded keys; §10 covers `excludedCommands` and `allowWrite` only. | **Accepted as incomplete.** The other four (`bwrapPath`, a hook, `statusLine`, `apiKeyHelper`) are ignored from project settings by the binary's own lists (§9) and are refused by `run-agent`. Their live characterization joins the rebuilt-image gate. **Corrected in §14:** `apiKeyHelper` is honoured. |
 | **Extraction.** Two input rules relax the literal §4.3 table: an absent project `settings.json` is accepted, and an empty or null `mcpServers` in `.claude.json` is accepted. | **Recorded as departures.** **D-10:** an absent project file is harmless under the managed policy, and the legacy and test fixtures rely on it. **D-11:** the real volume's `.claude.json` holds exactly one `mcpServers` entry, and it is empty (counted read-only). Refusing empty entries would refuse the real volume, and an empty map configures nothing. |
 | Narrative overclaims: L8 shell scope; L10 "cannot plant"; the README "outrank everything"; QUICKSTART "`--version` always works"; the overlay "refuses if these change"; the VERIFY-ASSERTIONS directory-wide invisibility claim; probe accounting | **Fixed in the text**, each narrowed to what was observed. The probe accounting: the L4–L6 refusal probes need no login; the L4/L4c/L5 direct-start characterisations did mount the real volume, as decision 4 allows. |
 | The review-0 dispositions: H2's nested-settings refusal and recursive deny not adopted; M2's `CLAUDE_CODE_SAFE_MODE` not unset | **Stand as recorded.** `CLAUDE_CODE_SAFE_MODE` is left alone deliberately: its effect is undetermined, and unsetting an operator's restrictive flag could weaken intent. |
@@ -416,3 +421,66 @@ a hash of `settings.json` and `remote-settings.json`, and the `mcpServers` conte
 
 The throwaway token still belongs to the owner's account; whether one sign-in can be revoked
 on its own is unverified. It is exposed only to the lead's own probe commands.
+
+## 14. Deployment gate on the rebuilt image (2026-09-25)
+
+**The rebuild.** From the scaffold's `main` at `4e950e5`, by the QUICKSTART update procedure.
+Before overwriting, every differing build-context file was matched to an earlier committed
+scaffold version. The owner restored `.secrets/npmrc`; the lead did not handle it. The build
+took 73 seconds and every Phase 3 layer was rebuilt.
+
+- Image `cf5cd3379a7f` is `localhost/pera-sandbox`. `893d19…` and `fda0c678…` are kept.
+- **Claude Code 2.1.282** (the installer takes the latest release; §§9–13 analysed 2.1.280).
+  **Copilot 1.0.83** came from the build cache.
+- The registered tasks EEP-24 and JWA-2906 pin `893d19…` and have no open rounds.
+  `sandbox-task.sh` already refused new rounds for them once the tag moved to `fda0c678…`.
+- **2.1.280 against 2.1.282, static:**
+  - The three key lists read in §9 are byte-identical.
+  - The CLI's ignored-environment list grew, and still holds `CLAUDE_CODE_MANAGED_SETTINGS_PATH`.
+  - Two new environment names matched the search: `CLAUDE_CODE_CCR_EARLY_REMOTE_CONNECT`
+    and `CLAUDE_CODE_REMOTE_TOOLS_SPECULATIVE_CLASSIFIER`. Neither was investigated.
+
+**Suites on the rebuilt image:** `verify-startup.sh --baked` 45/45, from source 44 passed and
+1 skipped; `verify-firewall.sh` 66/0; `verify-scaffold.sh` 24 passed, 2 skipped.
+
+**Observations.** Disposable containers, synthetic workspaces, logins as decision 4 assigns.
+
+| # | Result |
+|---|---|
+| L1 | **Pass.** The owner ran `/status` in a guarded session on the real volume: setting sources "User settings, Shared project settings, Enterprise managed settings (file)"; "Permission rules: Managed settings only (allowManagedPermissionRulesOnly)"; organisation Colorado PERA on a Team account. No skipped source and no rejected key was listed; the only diagnostics were the expected install-path warnings. `claude doctor` showed the organisation policy loaded and a remote-settings fetch still in progress. |
+| L2 | **Pass.** A write to `/home/vscode` was refused as read-only, also with `dangerouslyDisableSandbox`; `/tmp` was writable. |
+| L3 | **Pass, as rewritten in §13.** The real CLI by path with capabilities held, both without a lockdown and after one: its Bash call failed inside bubblewrap, no marker appeared, and 19 tools were offered with no web tool. This needed a model round trip, so it used the throwaway volume, not the "no login" row of §13. |
+| L4 | Direct starts past `run-agent`, throwaway volume. Markers under `/home/vscode` could come only from code run outside the sandbox. `bwrapPath` pointing at a marking wrapper: no marker. A project `PreToolUse` hook: no marker. `statusLine`: no marker, **but the control through `--settings` left none either** while the UI rendered, so nothing is shown about project scope; it did not run from any scope under this policy. **`apiKeyHelper`: ran** (finding G1 below). `run-agent` refuses all four (`verify-startup.sh`). |
+| L5, L6, L8 | Covered by the baked startup suite on this image; not repeated live. |
+| L7 | **Pass.** `api.anthropic.com` resolved from the pinned `/etc/hosts`; `example.com` did not resolve; HTTPS to it was refused by the sandbox proxy ("host is not on the allow list"); the model answered. |
+| L9 | The suites above. |
+| L10 | **Pass.** Bash: read-only file system. Write tool: "denied by your permission settings". The host copy was unchanged. |
+| L12 | **Pass.** A guarded session through the relocated link ran Bash, and `~/.local/bin/claude` was absent afterwards. |
+| Web tools | **Pass.** The guarded session offered 19 tools and neither web tool; the model confirmed it had neither. |
+
+**Real-volume comparison.** `settings.json` was unchanged across the checks. The first
+snapshot ran without `--userns=keep-id` and could not read `remote-settings.json` or
+`.claude.json`, so for those two there is no before-and-after pair. Read correctly
+afterwards, both were within policy: `remote-settings.json` was `{}`, where §2 recorded
+`[]`, and `.claude.json` held its one empty `mcpServers` entry (D-11). The CLI rewrites
+`remote-settings.json` on its own, so the gate now compares its content, not its hash.
+
+**Finding G1** (🟡 medium, recorded, no code change). On 2.1.282, a project-scope
+`apiKeyHelper` **runs**, outside the sandbox, when the CLI is started directly with the
+workspace trusted (`-p` trusts it). The throwaway volume held no `apiKeyHelper`, so the
+project file was the source. The binary gates a project helper only on workspace trust.
+The §9 claim was wrong for this key, and the other command-running keys are treated as
+honoured too.
+
+- The guarded path stays closed. `run-agent` refuses any project file that is not the
+  canonical one, before lockdown. In-session writes to it are refused (L10). The
+  single-link check covers a hard-link alias, and `/workspace/.git` is refused (H2).
+- Still, for these keys the byte comparison is the only layer, not one of two.
+- **Open for the owner:** optional hardening would have the `claude` wrapper also refuse
+  a non-canonical project file. That would stop the typed-`claude`-after-a-manual-lockdown
+  route these probes used, but not a start by path.
+
+**Still to do before E2/E3/E5/N5 count as deployed:** the supervised real build and
+unit-test run (Maven WAR, Karma ChromeHeadless) in the ticket lead's first session on this
+image (§12, M2). After that the throwaway volume `pera-claude-config-probe` is removed.
+Unattended use still needs C5.

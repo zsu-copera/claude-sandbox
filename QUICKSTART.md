@@ -426,10 +426,11 @@ Two things that look alarming but aren't:
   killed mid-command (`podman stop`, out of memory) can leave an **empty**
   `/workspace/.mcp.json` behind, and the next start refuses. Confirm the file is empty
   (`wc -c`), then remove it. A non-empty one is a real finding.
-- **A `claude doctor` warning.** It reports that the native installation is not in your
-  `PATH` and suggests `claude install`. That is deliberate: the image removed
-  `~/.local/bin/claude` so that every shell reaches the guarded wrapper. Do not run
-  `claude install`; it would recreate the unguarded link.
+- **Install-path warnings in `claude doctor` and `/status`.** They report that
+  `~/.local/bin` is not in your `PATH` and that `~/.local/bin/claude` is missing or broken,
+  and suggest `claude install` or a `PATH` change. That is deliberate: the image removed
+  `~/.local/bin/claude` so that every shell reaches the guarded wrapper. Do neither; both
+  would bring back an unguarded route.
 
 The checks assume nothing else writes the workspace or the config volume while a launcher
 starts. Run one agent session per workspace and per login volume at a time.
