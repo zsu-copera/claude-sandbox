@@ -434,6 +434,7 @@ separate decisions.
 | `verify-firewall.sh`, `tests/firewall/` | E1 regressions in disposable containers, without workspace or credential mounts |
 | `SECURITY-REVIEW.md` | Original audit reconciliation, E1 commit/evidence record and deployment status |
 | `VERIFY-ASSERTIONS.md` | Implemented checks, planned lifecycle assertions and coverage limits |
+| `BACKLOG.md` | Deferred work: workspace and playbook configuration issues outside this repository, and sandbox follow-ups pointing to SECURITY-REVIEW |
 | `sandbox-round.sh`, `tools/rounds/rounds.js` | Operator-only export/preview/apply/recover for append-only committed brief snapshots |
 | `verify-assembly.sh` | Disposable `new-sandbox.sh` assembly and reset-safety regressions (V2, D5, I1), in a throwaway tree under `$HOME` |
 | `verify-startup.sh`, `tests/startup/` | Disposable `--network=none` regressions for `run-agent`'s input checks and the guarded wrappers (N5, E5), with a recorder in place of the real CLIs; `--baked` checks a rebuilt image's copies |

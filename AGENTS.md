@@ -224,7 +224,8 @@ owner. Until it is deleted, anyone building from it gets stale scripts.
 ## Known findings
 
 Start with the **Open items** section at the top of `SECURITY-REVIEW.md`: it is the current
-work list and links to the evidence. The same file keeps the original 27-finding audit
+work list and links to the evidence. `BACKLOG.md` holds deferred work, including Claude
+configuration issues that live outside this repository. The same file keeps the original 27-finding audit
 reconciliation, N1 to N4, and the E1, N3, E6 and N4 implementation and deployment records.
 Keep original findings distinct from later remediation; do not re-audit from
 scratch or mark the deployed image fixed based only on source-mounted regressions.
