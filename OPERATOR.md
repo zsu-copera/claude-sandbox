@@ -227,6 +227,58 @@ they do not establish capture-time integrity, completeness, authenticity or
 durability across another host failure. Append the sanitized receipt reference to
 the ledger. No reset, cleanup or acceptance follows automatically from recovery.
 
+### Claude Code session evidence
+
+Demonstrated on 2026-09-27 on image `6fa46c4bb3c3` (Claude Code 2.1.283) with an approved,
+non-ticket probe; the record is in VERIFY-ASSERTIONS. Keep both records below. Neither is
+complete on its own.
+
+1. **The headless transcript.** `run-agent -p "…" --output-format stream-json --verbose > FILE`.
+   The launcher's banner shares stdout, so JSON events are the lines starting with `{`. It
+   records:
+   - the init event: session ID, model, CLI version, permission mode and tool list;
+   - every tool call with its input, and its result with an `is_error` flag;
+   - sub-agent tool calls inline, tagged with `parent_tool_use_id`;
+   - background-task events, and a final result event with turns, duration and cost.
+2. **The CLI's own session record** in the login volume. It is
+   `projects/-workspace/<session-id>.jsonl`, plus the sub-agent records under
+   `projects/-workspace/<session-id>/subagents/`. Exporting only the main file misses
+   sub-agent activity. This is also the record of an interactive session, which has no
+   stream-json. There, pair it with the terminal recorder above, and take the session ID
+   from `/status`.
+
+   After the container has stopped, export only that session's files, through a
+   read-only mount:
+
+```bash
+SID=<session-id>
+EV="$HOME/.pera-evidence/<TASK>-<ROUND>"; install -d -m 700 "$EV"
+podman run --rm --pull never --network=none --userns=keep-id \
+  -v pera-claude-config:/v:ro -v "$EV:/out" --entrypoint bash localhost/pera-sandbox -c \
+  'cd /v/projects && find . -path "*$0*" -type f -print0 | tar --null -T - -cf /out/session-files.tar' "$SID"
+(cd "$EV" && sha256sum -- * > manifest-sha256.txt && chmod 600 -- *)
+```
+
+What neither record holds:
+- **Exit status as a field.** A failed command shows up as "Exit code N" text with
+  `is_error`; a successful one shows no status. Where a status matters, the command
+  must print it. The overlay already tells the agent to preserve exit status.
+- **The full output of a background command.** It goes to `/tmp/claude-<uid>/` inside
+  the container and is lost at exit; the records keep only the tails the agent read.
+  A brief should have build and test commands redirect to a file under `/workspace`.
+- **The image ID.** Record it from `podman image inspect` at launch.
+
+The session record is written by the CLI into a volume that sandboxed commands cannot see
+and the file tools are denied. It is still not tamper-evident, and hashes taken after
+export detect only later changes.
+
+**Not exercised:**
+- an interactive Claude session;
+- a session long enough to compact its context;
+- several sub-agents at once.
+
+Note any of these in the run's capture gaps.
+
 ### Deploy the verification guidance without resetting a workspace
 
 `overlay/CLAUDE.md` now tells the sandbox agent to preserve verification exit

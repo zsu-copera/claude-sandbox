@@ -24,7 +24,7 @@ Details are in SECURITY-REVIEW's open items and in VERIFY-ASSERTIONS.
 
 | # | Item | Status |
 |---|---|---|
-| S-1 | **Execution evidence for Claude Code sessions.** OPERATOR's capture gate has been demonstrated for Copilot only. | To be established with the EEP-24 follow-up |
+| S-1 | **Execution evidence for Claude Code sessions.** OPERATOR's capture gate had been demonstrated for Copilot only. | **Demonstrated 2026-09-27** for headless sessions (OPERATOR, "Claude Code session evidence"). Interactive sessions and compaction not exercised. |
 | S-2 | **A live ticket round with Claude Code** under the context-aware workflow. Every live round so far ran on Copilot, including JWA-2906, whose Karma run therefore never met Claude's sandbox (spec §15). | To be exercised with the EEP-24 follow-up |
 | S-3 | **Reproducible image inputs** (D2/D3). Each rebuild installs the current Claude Code and Copilot releases. | Open |
 | S-4 | **G1 hardening.** Have the wrapper repeat the startup checks at the next rebuild. Mount `.claude/` read-only only if an in-session write route appears. | At the next rebuild |

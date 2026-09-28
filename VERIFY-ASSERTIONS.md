@@ -1284,6 +1284,28 @@ deployed image `6fa46c4bb3c3` (2026-09-27):
 - Mutations: pointing `CHROME_BIN` back at full Chromium fails S27. Removing an `XDG` redirect
   changes nothing, because the headless shell does not need one.
 
+### Claude Code evidence-capture probe, 2026-09-27
+
+Owner-approved, non-ticket probe for OPERATOR's execution-evidence gate (backlog S-1).
+- **Setup:** one guarded `run-agent` session on image `6fa46c4bb3c3` (Claude Code 2.1.283,
+  model `claude-opus-5-5[1m]`), a throwaway workspace and the real login volume.
+- **What it did:** a plain command, a failing command (exit 2), a write the sandbox refused
+  (exit 1), a file-tool write and one sub-agent command. Session
+  `6c2af0f6-f631-45f9-8c2a-327f2ce7ad87`, 17 s, 6 turns.
+- **Both records captured all six tool calls with their results and error flags.**
+  - The stream-json transcript carried the sub-agent's call inline (3 tagged events).
+  - The session record kept it in a separate `subagents/` file.
+  - Neither has a structured exit-status field.
+- **Background builds:** the earlier rehearsal's transcript shows their output went to
+  `/tmp/claude-1000/` in the container. Only the polled tails were recorded.
+- **Retention and integrity:**
+  - Evidence was retained privately outside the workspace: 9 files, and the manifest
+    verified.
+  - The login volume's checked files were unchanged.
+  - The documented export command reproduced the probe's export byte for byte.
+- **Not exercised:** interactive sessions, compaction, concurrent sub-agents. The recipe is
+  in OPERATOR, under "Claude Code session evidence".
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is
