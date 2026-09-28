@@ -479,9 +479,16 @@ honoured too.
   remain. In a session, writes to the file are refused twice over, by the managed `Edit`
   deny and by the sandbox's read-only bind (L10). At the next start, the byte comparison
   detects a changed file.
-- **Open for the owner:** optional hardening would have the `claude` wrapper also refuse
-  a non-canonical project file. That would stop the typed-`claude`-after-a-manual-lockdown
-  route these probes used, but not a start by path.
+- **Owner decision 2026-09-27: no change now (option A).** Two alternatives were weighed.
+  - **B:** the wrapper also runs the startup checks. It would stop only a deliberate manual
+    start that types `claude` after a hand-made lockdown and capability drop. It would add
+    no depth to guarded sessions, since it repeats the same check seconds later. It would
+    need a rebuild, which would move the image ID pinned by the next registration.
+  - **C:** a read-only bind of `.claude/` in the launch command. That would be a real
+    second write barrier, at the cost of every launch command.
+
+  **B is to be reconsidered at the next rebuild.** C is to be reconsidered if a probe ever
+  finds an in-session write route to the project file.
 
 **Still to do before E2/E3/E5/N5 count as deployed:** the supervised real build and
 unit-test run (Maven WAR, Karma ChromeHeadless) in the ticket lead's first session on this
