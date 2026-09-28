@@ -494,3 +494,79 @@ honoured too.
 unit-test run (Maven WAR, Karma ChromeHeadless) in the ticket lead's first session on this
 image (§12, M2). After that the throwaway volume `pera-claude-config-probe` is removed.
 Unattended use still needs C5.
+
+## 15. Build rehearsal, finding G2 and the second rebuild (2026-09-27)
+
+**Rehearsal.** The owner approved a rehearsal of the supervised build while the ticket lead's
+first session was pending. It ran in a disposable copy of `~/pera-sandbox` without `.secrets`,
+in one guarded `run-agent` session on the throwaway login, on `cf5cd3379a7f`. The offline
+memberWWW WAR build passed (4 min 27 s, fresh WAR). **Karma could not start ChromeHeadless,
+so no test ran.**
+
+**Finding G2** (🟠 deployment blocker for Claude sessions, fixed). Full Chromium cannot start
+inside Claude's Bash sandbox. Two causes stack:
+
+1. Its crash store lives under the config home, and `$HOME` is read-only in the sandbox, so
+   the crash handler starts without a database ("`--database is required`"). Reproduced
+   without the model, in a fresh container in `run-agent`'s capability state with a
+   read-only root. Pointing `XDG_CONFIG_HOME` at `/tmp` clears it.
+2. Its single-instance lock needs a Unix-domain socket, and the sandbox's seccomp filter
+   forbids creating one: two filters active, `AF_UNIX` listen `EPERM`, `socketpair` allowed.
+   With cause 1 cleared, Chrome aborts in `process_singleton_posix.cc` with "socket()
+   failed: Operation not permitted". A policy copy with `allowAllUnixSockets` removed the
+   filter, but cause 1 still stopped Chrome first, which is why the two were separated only
+   in that order. No Chromium switch disables the lock, and full Chromium 153 fails the same.
+
+Why the JWA-2906 round passed this suite on the old image is not established.
+
+**Owner decision (option A).** Install EPEL's `chromium-headless` and point `CHROME_BIN` at
+its headless shell, which has no single-instance lock. The sandbox policy is unchanged. In
+the real sandbox, the PSC v2 suite ran `TOTAL: 270 SUCCESS` both with and without an `XDG`
+redirect, so no wrapper script is needed. Rejected:
+- **Allowing Unix sockets** (`allowAllUnixSockets`) is all-or-nothing on Linux. Sandboxed
+  code could then connect to any Unix socket in the container, including the CLI's own
+  session socket under `/tmp`, which runs outside the sandbox. That is a plausible escape
+  route; it was not tested.
+- **No change** would leave Karma to Copilot sessions or the host, and take the test loop
+  away from Claude sessions.
+
+**Change** (`fix/g2-headless-chrome`, `3696ef1`):
+- The Dockerfile installs `chromium chromium-headless` in a step after the Copilot install,
+  and checks both are on one release.
+- `CHROME_BIN` is `/usr/lib64/chromium-browser/headless_shell`. `/usr/local/bin/chrome` stays
+  full Chromium.
+- New checks:
+  - **S27:** a mutation pointing `CHROME_BIN` back at full Chromium fails it.
+  - **`verify-startup.sh` scenario `chrome-headless`:** the baked `CHROME_BIN`, matching
+    package releases, and a start with a read-only home. Its bwrap has no seccomp filter,
+    so it cannot show cause 2; Karma in the real sandbox is a live check.
+- The overlay tells agents not to point `CHROME_BIN` at full Chromium.
+
+**Second rebuild.** From the branch's build context by the QUICKSTART procedure. It took
+about 3 minutes and rebuilt every layer from the new Chromium step down; Copilot's layer
+stayed cached.
+
+- Image `6fa46c4bb3c3` is `localhost/pera-sandbox`: **Claude Code 2.1.283**, Copilot
+  1.0.83, Chromium and its headless shell 153.0.8010.52.
+- `cf5cd3379a7f`, `fda0c678…` and `893d19…` are kept. No registration pins `cf5cd3379a7f`.
+
+**Re-gate on `6fa46c4bb3c3`**, the §14 scripts unchanged except for the image:
+
+| Check | Result |
+|---|---|
+| `verify-startup.sh --baked` | 46 of 46, `chrome-headless` included |
+| `verify-firewall.sh` | 66 passed |
+| `verify-scaffold.sh` | 25 passed, 2 skipped |
+| 2.1.282 against 2.1.283, static | The §9 key lists are identical. The ignored-environment list grew past the earlier search window and still holds `CLAUDE_CODE_MANAGED_SETTINGS_PATH` (found by offset). New names `CLAUDE_CODE_REMOTE_TOOLS_CALLER_SESSIONS_MAX`, `…_FORWARD` and `…_PIN_STORED_LOGIN` were not investigated. |
+| L1 `claude doctor` | Organisation policy loaded; the same two install-path warnings. **`/status` was not repeated on 2.1.283.** |
+| L2, L7, L10, L12, web tools | Pass, as in §14 |
+| Real-volume comparison | All three checked files unchanged, now read with the corrected snapshot |
+| L3 | Pass, as in §14 |
+| L4 | Hook and `bwrapPath` not honoured; `statusLine` not shown either way; `apiKeyHelper` still honoured (G1) |
+| Full rehearsal with the image's own `CHROME_BIN` | Maven WAR **BUILD SUCCESS** (4 min 44 s, fresh WAR); Karma **`TOTAL: 270 SUCCESS`** in Chrome Headless 153 |
+
+**Still to do before E2/E3/E5/N5 count as deployed:** the supervised real build and unit-test
+run in the ticket lead's first session on `6fa46c4bb3c3` (§12, M2). The rehearsal covered its
+technical content on a copy of the same workspace. Whether it can stand in for that session
+is the owner's call. Then the throwaway volume and probe workspaces are removed. Unattended use
+still needs C5.
