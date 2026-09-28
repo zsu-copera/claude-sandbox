@@ -475,7 +475,10 @@ honoured too.
 - The guarded path stays closed. `run-agent` refuses any project file that is not the
   canonical one, before lockdown. In-session writes to it are refused (L10). The
   single-link check covers a hard-link alias, and `/workspace/.git` is refused (H2).
-- Still, for these keys the byte comparison is the only layer, not one of two.
+- What G1 removes is the CLI's own refusal of these keys at project scope. Two layers
+  remain. In a session, writes to the file are refused twice over, by the managed `Edit`
+  deny and by the sandbox's read-only bind (L10). At the next start, the byte comparison
+  detects a changed file.
 - **Open for the owner:** optional hardening would have the `claude` wrapper also refuse
   a non-canonical project file. That would stop the typed-`claude`-after-a-manual-lockdown
   route these probes used, but not a start by path.
