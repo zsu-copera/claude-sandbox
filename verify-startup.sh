@@ -38,6 +38,7 @@ SCENARIOS=(
     wrapper-bare wrapper-bare-version wrapper-version-plus-args wrapper-lock-not-root
     wrapper-lock-symlink wrapper-lock-dir wrapper-caps-held wrapper-guarded wrapper-unknown-name
     copilot-bare copilot-guarded copilot-launcher copilot-pkg-wrapper copilot-pkg-launcher baked-layout
+    chrome-headless
 )
 NAME="p3-startup-${UID}-${BASHPID}-${RANDOM}"
 ACTIVE=""

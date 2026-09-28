@@ -115,6 +115,7 @@ case "$SC" in
     wrapper-unknown-name)           lock; ln -s /usr/local/lib/pera-sandbox/bin/claude /opt/p3bin/other ;;
     wrapper-bare|wrapper-bare-version|wrapper-version-plus-args|copilot-bare) ;;
     baked-layout) [ "$BAKED" = 1 ] || { echo "baked-layout needs --baked"; exit 77; } ;;
+    chrome-headless) [ -x /usr/lib64/chromium-browser/headless_shell ] || { echo "image has no headless shell"; exit 77; } ;;
     *) die "unknown scenario" ;;
 esac
 # Every agent-* scenario runs after a (fake) successful lockdown, so a refusal proves the
@@ -230,5 +231,20 @@ case "$SC" in
         cmp -s /etc/claude-code/managed-settings.json "$S/claude-managed-settings.json" || die "baked policy differs from source"
         cmp -s /usr/local/lib/pera-sandbox/bin/claude "$S/agent-cli-guard.sh" || die "baked wrapper differs from source"
         cmp -s /usr/local/bin/run-agent "$S/run-agent.sh" || die "baked run-agent differs from source" ;;
+    chrome-headless)
+        # Karma's browser is the headless shell, which must start with a read-only home, as
+        # in Claude's Bash sandbox (G2). This bwrap has no seccomp filter, so it cannot show
+        # the Unix-socket half of G2; Karma's real run in the Claude sandbox is a live check.
+        # --no-sandbox only because this suite's container drops CAP_SYS_CHROOT, which
+        # Chromium's own sandbox needs.
+        H=/usr/lib64/chromium-browser/headless_shell
+        if [ "$BAKED" = 1 ]; then
+            [ "${CHROME_BIN:-}" = "$H" ] || die "CHROME_BIN is ${CHROME_BIN:-unset}, want $H"
+            [ "$(rpm -q --qf '%{VERSION}' chromium)" = "$(rpm -q --qf '%{VERSION}' chromium-headless)" ] \
+                || die "chromium and chromium-headless are on different releases"
+        fi
+        as_agent bwrap --ro-bind / / --dev /dev --proc /proc --tmpfs /tmp --unshare-net --die-with-parent \
+            "$H" --headless --disable-gpu --no-sandbox --dump-dom about:blank > "$R/out" 2>&1 || rc=$?
+        [ "$rc" = 0 ] && grep -q '<html' "$R/out" || die "headless Chrome did not render a page with a read-only home (exit $rc)" ;;
 esac
 echo "ok"

@@ -13,7 +13,7 @@ COPY container/certs/ /etc/pki/ca-trust/source/anchors/
 RUN update-ca-trust
 
 # Toolchain: JDK 17 (prj target), Node 22 (matches the v22.13.0 the
-# frontend-maven-plugin pins per module), Chromium (Karma ChromeHeadless),
+# frontend-maven-plugin pins per module), Chromium (see G2 below for Karma),
 # iptables/ipset/bind-utils (init-firewall.sh), bubblewrap/socat (Claude native sandbox).
 RUN dnf -y install epel-release \
     && dnf -y module enable nodejs:22 \
@@ -36,7 +36,8 @@ RUN curl -fsSL "${NEXUS_MAVEN}/org/apache/maven/apache-maven/${MAVEN_VERSION}/ap
         | tar -xz -C /opt \
     && ln -s /opt/apache-maven-${MAVEN_VERSION} /opt/maven
 
-# Stable Chrome path for Karma regardless of which binary name EPEL ships
+# Stable path to the full Chromium browser regardless of which binary name EPEL ships.
+# Karma uses the headless shell instead (CHROME_BIN, below).
 RUN ln -sf "$(command -v chromium-browser || command -v chromium)" /usr/local/bin/chrome
 
 # Replace the dnf node BINARY with the official build: the dnf-built node SEGFAULTS
@@ -74,6 +75,16 @@ RUN --mount=type=secret,id=npmrc,target=/root/.npmrc \
         --registry=https://nexus-repo.isd.copera.org/repository/java-npm-group-public/ \
     && command -v copilot && copilot --version
 
+# Karma's browser (finding G2). Full Chromium cannot start inside Claude's Bash sandbox,
+# which mounts $HOME read-only and forbids creating Unix-domain sockets: its crash store
+# lives under the config home, and its single-instance lock needs a Unix socket. EPEL's
+# headless shell starts there, so CHROME_BIN names it. Naming chromium too keeps both
+# packages on the same EPEL release.
+RUN dnf -y install --setopt=install_weak_deps=False chromium chromium-headless \
+    && dnf clean all \
+    && [ "$(rpm -q --qf '%{VERSION}' chromium)" = "$(rpm -q --qf '%{VERSION}' chromium-headless)" ] \
+    && /usr/lib64/chromium-browser/headless_shell --version
+
 # Non-root user (devcontainer convention). Passwordless sudo is scoped to the ONE
 # command that needs it: init-firewall.sh (the only sudo call site in prepare.sh,
 # run-agent.sh and run-copilot.sh). A blanket NOPASSWD:ALL would make the agent
@@ -92,7 +103,7 @@ ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk \
     # Maven repo on the workspace mount: containers are ephemeral, the cache the
     # prepare phase warms must be the same one the locked-down agent reads.
     MAVEN_OPTS="-Dmaven.repo.local=/workspace/.m2/repository" \
-    CHROME_BIN=/usr/local/bin/chrome \
+    CHROME_BIN=/usr/lib64/chromium-browser/headless_shell \
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1 \
     DISABLE_AUTOUPDATER=1 \
     # Node ignores the system store — covers npm, ng, and the Claude CLI (RHEL bundle path)

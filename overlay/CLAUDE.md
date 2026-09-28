@@ -172,8 +172,10 @@ npx ng test  --project <project-name> --watch=false                             
 npx ng build --project <project-name>
 ```
 
-Node 22 and Chromium (`CHROME_BIN` set) are system-installed; Karma still needs the
-`--browsers=ChromeHeadless` override above.
+Node 22 and Chromium are system-installed. `CHROME_BIN` names Chromium's headless shell,
+the only Chrome that starts inside the Bash sandbox; Karma still needs the
+`--browsers=ChromeHeadless` override above. Do not point `CHROME_BIN` at full Chromium:
+it aborts in the sandbox (read-only home, no Unix-domain sockets).
 
 ## Conventions
 

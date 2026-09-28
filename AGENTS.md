@@ -147,7 +147,7 @@ cheapest rung that actually covers your change.
 1. **Static checks — no container.** Run `./verify-scaffold.sh`. It checks line endings, shell
    syntax, JSON validity, the absence of personal paths, and that every isolation invariant
    above is still present in the source. **Run it after every edit**, and expect a clean run to
-   report `24 passed, 0 failed, 2 skipped` — S3 and S20 skip without shellcheck and
+   report `25 passed, 0 failed, 2 skipped` — S3 and S20 skip without shellcheck and
    VERSION. S7 has passed since I1/I2 were fixed on 2026-09-23. Any failure is yours. S11/S12 check source structure, not runtime containment.
 2. **Container, already built.** An image (`localhost/pera-sandbox`) and an assembled, warmed
    sandbox (`~/pera-sandbox` inside the `centos-9` WSL distro) already exist, so in-container

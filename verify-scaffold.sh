@@ -604,6 +604,20 @@ l_clock=$(line_of container/run-copilot.sh 'init-firewall.sh lockdown "${MODE_DO
                               "Behavior: verify-startup.sh." \
                   || fail S26 "next-session input checks or the baked-CLI rule changed (finding N5)" "broken:$s26_bad"
 
+# --- S27  Karma's browser is EPEL's headless shell (G2) ------------------------------------
+# Full Chromium cannot start inside Claude's Bash sandbox (read-only $HOME, no Unix-domain
+# sockets). Not an isolation invariant; without it agents cannot run Karma suites.
+s27_bad=""
+for needle in 'dnf -y install --setopt=install_weak_deps=False chromium chromium-headless' \
+              'CHROME_BIN=/usr/lib64/chromium-browser/headless_shell'; do
+    echo "$dockerfile_code" | grep -qF -- "$needle" || s27_bad="$s27_bad missing:$needle"
+done
+n_chrome_bin=$(echo "$dockerfile_code" | grep -c 'CHROME_BIN=')
+[ "$n_chrome_bin" = 1 ] || s27_bad="$s27_bad CHROME_BIN-set-$n_chrome_bin-times"
+[ -z "$s27_bad" ] && pass S27 "Karma's CHROME_BIN is EPEL's headless shell" \
+                              "Behavior: verify-startup.sh chrome-headless; Karma in the real sandbox is a live check." \
+                  || fail S27 "Karma's browser packaging changed (finding G2)" "broken:$s27_bad"
+
 # --- summary --------------------------------------------------------------------------------
 echo
 printf '%s%d passed%s, %s%d failed%s, %s%d warnings%s, %s%d skipped%s\n' \
