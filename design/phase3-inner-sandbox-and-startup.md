@@ -517,7 +517,9 @@ inside Claude's Bash sandbox. Two causes stack:
    filter, but cause 1 still stopped Chrome first, which is why the two were separated only
    in that order. No Chromium switch disables the lock, and full Chromium 153 fails the same.
 
-Why the JWA-2906 round passed this suite on the old image is not established.
+The JWA-2906 round that passed this suite ran on Copilot CLI 1.0.83, which has no inner
+sandbox (VERIFY-ASSERTIONS, JWA-2906 field evidence). No Claude Code session has yet run a
+Karma suite in a live ticket round.
 
 **Owner decision (option A).** Install EPEL's `chromium-headless` and point `CHROME_BIN` at
 its headless shell, which has no single-instance lock. The sandbox policy is unchanged. In
