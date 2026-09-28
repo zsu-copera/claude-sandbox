@@ -49,8 +49,8 @@ procedure, `FAQ.md` for troubleshooting. Do not duplicate their content here.
   `new-sandbox.sh`, run in WSL, is the only assembly path; `New-Sandbox.ps1` was removed (D4).
 - **This directory is its own git repository** (standalone, default branch `main`, private
   backup remote `origin` — see Promotion). Inspect the current branch before working. As of
-  2026-09-23 `main` contains the E1, round-intake, task-operator and context-handoff work;
-  their feature branches are kept for history.
+  2026-09-27 `main` contains the E1, round-intake, task-operator and context-handoff work,
+  Phases 1 to 3 and the G2 fix; their feature branches are kept for history.
   Commit as you go, in small
   reviewable steps; a change that cannot be described in
   one line is usually two changes. `git diff` is the review surface, so leave the tree clean

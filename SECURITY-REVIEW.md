@@ -12,20 +12,26 @@ branch; packaging and deployment remain outstanding. See the
 and launchers. See [E1 deployment observation](#e1-deployment-observation-2026-09-23).
 The other findings are unchanged.
 
-## Open items, as of 2026-09-23
+## Open items, as of 2026-09-27
 
 This is the current work list; start here in a new session. Each item links to its evidence.
 The register and the dated sections below keep their historical meaning. **Deployed:** E1,
-N3, E6 and N4 in image `fda0c678…` (see [the deployment record](#deployment-of-n3-e6-and-n4-2026-09-23)).
+N3, E6 and N4 in image `fda0c678…` (see [the deployment record](#deployment-of-n3-e6-and-n4-2026-09-23)),
+and E2/E3, E5 and N5 in image `6fa46c4bb3c3` (see [Phase 3](#phase-3-inner-sandbox-and-guarded-startup-2026-09-24)).
 The policy governing what is required is in [Containment decisions](#containment-decisions-2026-09-23).
 
-**Blocking unattended runs** (these need a written spec and owner review; the firewall and
-settings-precedence work is not delegable without review):
+**Blocking unattended runs:**
 
 | Item | What is needed |
 |---|---|
-| E2/E3, E5, N5 | **Implemented in source, not deployed** ([Phase 3](#phase-3-inner-sandbox-and-guarded-startup-2026-09-24), spec approved 2026-09-24). Root-owned managed policy, startup checks of the next session's inputs, baked CLIs only, guarded wrappers. Reviewed three times: review 0, then a pre-merge two-pass review (spec §11–§12). Every high and medium finding is fixed or recorded as a gate. Live observations on a throwaway test image are recorded (spec §10). **Rebuilt 2026-09-25** as image `cf5cd3379a7f` (Claude Code 2.1.282, Copilot 1.0.83). The live gate passed on it (spec §14), apart from L4's `statusLine`, which could not be shown either way. It also found G1: a project `apiKeyHelper` runs on a direct start, so for command-running keys the CLI no longer refuses them itself: the in-session write denials and the startup byte check remain. The owner accepted G1 without a code change (2026-09-27). Having the wrapper repeat the startup checks is to be reconsidered at the next rebuild. **G2 (2026-09-27):** a build rehearsal showed Karma could not start full Chromium inside Claude's Bash sandbox (read-only home, no Unix-domain sockets). Fixed without changing the sandbox: Karma now uses EPEL's headless shell. **Rebuilt again** as image `6fa46c4bb3c3` (Claude Code 2.1.283, Copilot 1.0.83); the gate passed again on it, and the rehearsal ran a Maven WAR build and `TOTAL: 270 SUCCESS` (spec §15). Remaining: the supervised real build and unit-test run in the ticket lead's first session on this image, unless the owner accepts the rehearsal in its place. Not deployed until then. **Condition:** if the organisation ever configures server-managed Claude settings, the CLI selects a single source first-wins and may rank them above the managed file. How the locks would combine is unverified, so any such settings must carry this policy. |
-| C5, sign-off | Security/IT sign-off before other developers run unattended. Record it here. |
+| C5, sign-off | Security/IT sign-off before other developers run unattended. The owner holds a drafted request packet, private until shared. Record the sign-off here. |
+
+**Conditions on the deployed Phase 3 policy:**
+- If the organisation ever configures server-managed Claude settings, they must carry this
+  policy. The CLI selects a single source first-wins and may rank them above the managed
+  file, and how the locks would combine is unverified.
+- G1 is accepted: a project `apiKeyHelper` runs on a direct start. Reconsider having the
+  wrapper repeat the startup checks at the next rebuild (spec §14).
 
 **Blocking a second developer** (mechanical unless noted):
 
@@ -33,23 +39,17 @@ settings-precedence work is not delegable without review):
 |---|---|
 | Onboarding | Each developer: repository invitation, build from `main`, own fine-grained PAT (QUICKSTART step 4-alt). |
 
-**Safety and correctness:**
-
-| Item | What is needed |
-|---|---|
-| Next rebuild | Must carry Phase 1's `prepare.sh` and Copilot seed, and Phase 3. Until then, prepare a newly assembled workspace only on a rebuilt image: the old `prepare.sh` restores the removed identity default. Phase 3's project settings deliberately repeat the old deny rules and sandbox lists (spec §9, D-9), so a workspace assembled after Phase 3 is no weaker than before on the old image, but it gets none of the Phase 3 protections there. |
-
-**Verification gaps on the current image** (first real session after the rebuild):
-- Interactive Copilot and Claude sessions under E6.
-- Maven/npm offline builds with DNS closed.
-- Claude tool calls inside its inner sandbox.
+**Verification gaps on the current image:**
+- An interactive Copilot session. Only headless autopilot sessions were observed on it.
 - Copilot `/model` on a new volume shows the seeded `claude-opus-5.5` (C3; the dotted ID is inferred from the CLI bundle).
+- `/status` on Claude Code 2.1.283. It was observed on 2.1.282.
+- The ticket lead's first real task session, as confirmation. The owner accepted the build
+  rehearsal as the supervised-build check (spec §15).
 
-The E6 discovery ran on baked Copilot 1.0.83, while the workspace-staged CLI is 1.0.86. Earlier
-records said 1.0.83 for the staged CLI, and the discrepancy is unexplained. After Phase 3
-only the baked CLIs run, and the rebuild installs whatever versions are current at build
-time, so record both versions after the rebuild. If a CLI stops working, run a new
-names-only discovery; do not reopen DNS.
+Baked CLIs on `6fa46c4bb3c3`: Claude Code 2.1.283 and Copilot 1.0.83. The workspace-staged
+copies are retired and removed, so the 1.0.86 discrepancy recorded earlier no longer affects
+what runs. A rebuild installs the current release of each CLI, so record both after every
+rebuild. If a CLI stops working, run a new names-only discovery; do not reopen DNS.
 
 **Closed 2026-09-23 in [Phase 1](#phase-1-cleanup-2026-09-23):** I1, I2, I3, I4, C1, C2, C3, D4.
 **Closed 2026-09-23 in [Phase 2](#phase-2-reset-safety-and-required-assets-2026-09-23):** V2, D5.
@@ -60,7 +60,8 @@ CI; a static-check CI job is deferred by owner decision), and V3/V4 (partly addr
 **Owner actions outside this repository:**
 - Delete the retired `Documentation` branch `claude-sandbox`; a bundle is retained privately.
 - Protect or move the scaffold repository before wider distribution.
-- Keep the untagged previous image `893d19…`: EEP-24 and JWA-2906 records pin it.
+- Keep the untagged images `893d19…`, which the EEP-24 and JWA-2906 records pin, and `fda0c678…`.
+  `cf5cd3379a7f` is untagged and unpinned, and can be removed.
 
 **Accepted, not work items:** N1, where the hook is defense-in-depth only and should not be
 chased with more patterns, and data encoded in HTTPS to the allowlisted model providers.
@@ -729,3 +730,16 @@ Decided by the owner 2026-09-25 (spec §13):
 Added to the deployment gate:
 - `/status` and the remaining L4 keys on the rebuilt image;
 - a supervised real build and unit-test run.
+
+**Deployment, 2026-09-27.** E2/E3, E5 and N5 are **deployed** in image `6fa46c4bb3c3`,
+built from `3696ef1` (Claude Code 2.1.283, Copilot 1.0.83).
+
+- The first rebuild's gate (spec §14) found G1, which the owner accepted.
+- A build rehearsal then found G2, fixed without changing the sandbox (§15).
+- The re-gate on the second rebuild passed.
+- The owner accepted the rehearsal as the supervised-build check (§12, M2). It ran a Maven
+  WAR build and the PSC v2 Karma suite, `TOTAL: 270 SUCCESS`, in a guarded session on a
+  copy of the real workspace.
+- Not repeated on 2.1.283: the `/status` source listing (L1).
+
+Unattended use still requires C5.

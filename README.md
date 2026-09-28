@@ -46,9 +46,10 @@ CLI, `--allow-all-tools`). Isolation layers:
 The required workflow is **local commits only**: the sandbox repos have no remotes,
 common push commands are deny-ruled, and a human reviews and pushes from Windows.
 These controls do not prove that every equivalent command or subprocess upload is
-blocked. E1, E6 and N4 are deployed. E2/E3, E5 and N5 are implemented in source (Phase 3)
-and count as deployed only after the rebuilt image passes the live checks in
-[the Phase 3 spec](design/phase3-inner-sandbox-and-startup.md#6-verification-plan); N1 remains open.
+blocked. E1, E6 and N4 are deployed, and so are E2/E3, E5 and N5 (Phase 3), since the
+image passed the live checks in
+[the Phase 3 spec](design/phase3-inner-sandbox-and-startup.md#15-build-rehearsal-finding-g2-and-the-second-rebuild-2026-09-27)
+on 2026-09-27. N1 remains open.
 
 **Review model in one sentence:** the bind-mounted `~/pera-sandbox` is the intended
 review channel — a disposable copy whose contents are inert data until a human
@@ -326,9 +327,8 @@ and cannot be disabled through `disableAllHooks`, but equivalent commands and sc
 indirection still evade its matching. Hook timeouts can fail open. Removing remotes
 does not prevent an explicit destination either.
 
-Claude's address allowlist is narrower. Its inner-sandbox findings (E2/E3, and E5/N5)
-are implemented in source but not yet observed on a rebuilt image, which also matters
-before unattended use. Stronger guarantees require a separately reviewed
+Claude's address allowlist is narrower, and its inner sandbox (E2/E3, E5/N5) is deployed.
+Unattended use still needs Security/IT sign-off (C5). Stronger guarantees require a separately reviewed
 network/credential design; adding command regexes is not sufficient. See
 [E2-E6 and N1/N2](SECURITY-REVIEW.md#security-findings). GitHub branch protection and
 PR requirements remain useful backstops, not protection for every possible write path.

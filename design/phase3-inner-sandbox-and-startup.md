@@ -570,3 +570,7 @@ run in the ticket lead's first session on `6fa46c4bb3c3` (§12, M2). The rehears
 technical content on a copy of the same workspace. Whether it can stand in for that session
 is the owner's call. Then the throwaway volume and probe workspaces are removed. Unattended use
 still needs C5.
+
+**Owner decision 2026-09-27:** the rehearsal is accepted as the supervised-build check.
+E2/E3, E5 and N5 are deployed in `6fa46c4bb3c3`. The ticket lead's first real session is
+confirmation, not a gate.

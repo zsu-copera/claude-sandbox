@@ -1275,6 +1275,15 @@ Results:
 - Mutation M17 (no single-link rule): both hard-link scenarios fail.
 - `verify-scaffold`: 24 passed.
 
+Finding G2 (spec §15) added S27 and the `chrome-headless` startup scenario. Results on the
+deployed image `6fa46c4bb3c3` (2026-09-27):
+- `verify-scaffold`: 25 passed, 2 skipped.
+- `verify-startup`: 46 of 46 with `--baked`. From source, `chrome-headless` skips on an image
+  without the headless shell.
+- `verify-firewall`: 66 passed.
+- Mutations: pointing `CHROME_BIN` back at full Chromium fails S27. Removing an `XDG` redirect
+  changes nothing, because the headless shell does not need one.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is
@@ -1290,7 +1299,7 @@ Results:
 ## Notes for whoever implements this
 
 - **The S-series is implemented** in `verify-scaffold.sh` (2026-09-09). Since I1/I2 were
-  fixed (2026-09-23), and with S25/S26 from Phase 3 (2026-09-24): 24 pass, 0 failures, 0 warnings, 2 skips (no shellcheck, no VERSION). Focused firewall coverage does not complete the lifecycle
+  fixed (2026-09-23), with S25/S26 from Phase 3 (2026-09-24) and S27 from G2 (2026-09-27): 25 pass, 0 failures, 0 warnings, 2 skips (no shellcheck, no VERSION). Focused firewall coverage does not complete the lifecycle
   P/A/G/X runner.
 - S1 is the assertion most likely to be written wrongly. Two tools lie here: `grep -c $'\r'`
   can match every line in Git Bash, and `file(1)` omits its CRLF note in some builds. Count

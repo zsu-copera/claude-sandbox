@@ -361,10 +361,10 @@ mandatory from a root-owned managed policy: `sandbox.failIfUnavailable` refuses 
 without it and `allowUnsandboxedCommands: false` ignores `dangerouslyDisableSandbox`
 (E2/E3). On a test image both held: a write outside `/workspace` and `/tmp` was refused
 even with `dangerouslyDisableSandbox` (retained transcript). With capabilities still held,
-the CLI did start but its Bash command failed rather than running unsandboxed; that was
-seen once and its console output was not retained, so repeat it on the rebuilt image. They count as deployed once
-the rebuilt image passes the live checks in the
-[Phase 3 spec](design/phase3-inner-sandbox-and-startup.md#6-verification-plan).
+the CLI did start but its Bash command failed rather than running unsandboxed. The same held
+on the deployed image, where the live checks in the
+[Phase 3 spec](design/phase3-inner-sandbox-and-startup.md#15-build-rehearsal-finding-g2-and-the-second-rebuild-2026-09-27)
+passed on 2026-09-27.
 
 **`run-agent` or `claude` says `REFUSED (finding N5)` or `(finding E5)`. What now?**
 Nothing was changed. E5 means an agent CLI was started outside `run-agent` /
