@@ -20,11 +20,10 @@ N3, E6 and N4 in image `fda0c678…` (see [the deployment record](#deployment-of
 and E2/E3, E5 and N5 in image `6fa46c4bb3c3` (see [Phase 3](#phase-3-inner-sandbox-and-guarded-startup-2026-09-24)).
 The policy governing what is required is in [Containment decisions](#containment-decisions-2026-09-23).
 
-**Blocking unattended runs:**
-
-| Item | What is needed |
-|---|---|
-| C5, sign-off | Security/IT sign-off before other developers run unattended. The owner holds a drafted request packet, private until shared. Record the sign-off here. |
+**Blocking unattended runs:** C5, Security/IT sign-off before other developers run unattended.
+**Deferred by the owner (2026-09-27):** autonomous runs are a goal for much later, so the
+sign-off is not being sought now. A drafted request packet exists, private to the owner.
+Record the sign-off here when it is given.
 
 **Conditions on the deployed Phase 3 policy:**
 - If the organisation ever configures server-managed Claude settings, they must carry this
@@ -60,8 +59,9 @@ CI; a static-check CI job is deferred by owner decision), and V3/V4 (partly addr
 **Owner actions outside this repository:**
 - Delete the retired `Documentation` branch `claude-sandbox`; a bundle is retained privately.
 - Protect or move the scaffold repository before wider distribution.
-- Keep the untagged images `893d19…`, which the EEP-24 and JWA-2906 records pin, and `fda0c678…`.
-  `cf5cd3379a7f` is untagged and unpinned, and can be removed.
+- Keep the untagged image `893d19…`: the EEP-24 and JWA-2906 records pin it. Remove images
+  with `podman rmi --no-prune`: plain `rmi` also deletes untagged parents, which is how
+  `fda0c678…` was lost on 2026-09-27 (see the Phase 3 deployment record).
 
 **Accepted, not work items:** N1, where the hook is defense-in-depth only and should not be
 chased with more patterns, and data encoded in HTTPS to the allowlisted model providers.
@@ -743,3 +743,10 @@ built from `3696ef1` (Claude Code 2.1.283, Copilot 1.0.83).
 - Not repeated on 2.1.283: the `/status` source listing (L1).
 
 Unattended use still requires C5.
+
+**Cleanup, 2026-09-27.** Removed: the throwaway login volume, the probe workspaces, the
+rehearsal copy, the two throwaway test images and `cf5cd3379a7f`. **`fda0c678…` was deleted
+by mistake.** The test image built on it was removed with plain `podman rmi`, which also
+prunes untagged parent images; the owner had asked for it to be kept. No task record pins it,
+and its base and toolchain layers survive in `6fa46c4bb3c3`, but it cannot be restored under
+the same ID. `893d19…` is intact. The private evidence under `~/p3-gate-out` is kept.

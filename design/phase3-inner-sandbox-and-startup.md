@@ -574,3 +574,7 @@ still needs C5.
 **Owner decision 2026-09-27:** the rehearsal is accepted as the supervised-build check.
 E2/E3, E5 and N5 are deployed in `6fa46c4bb3c3`. The ticket lead's first real session is
 confirmation, not a gate.
+
+**Cleanup, 2026-09-27.** The throwaway volume, probe workspaces, rehearsal copy, test images
+and `cf5cd3379a7f` were removed. `fda0c678…` was removed by mistake with them; see
+SECURITY-REVIEW's Phase 3 deployment record. The C5 sign-off is deferred by the owner.
