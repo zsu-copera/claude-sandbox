@@ -438,7 +438,7 @@ separate decisions.
 | `sandbox-round.sh`, `tools/rounds/rounds.js` | Operator-only export/preview/apply/recover for append-only committed brief snapshots |
 | `verify-assembly.sh` | Disposable `new-sandbox.sh` assembly and reset-safety regressions (V2, D5, I1), in a throwaway tree under `$HOME` |
 | `verify-startup.sh`, `tests/startup/` | Disposable `--network=none` regressions for `run-agent`'s input checks and the guarded wrappers (N5, E5), with a recorder in place of the real CLIs; `--baked` checks a rebuilt image's copies |
-| `design/` | Written specs for owner review, e.g. the Phase 3 inner-sandbox and startup spec |
+| `design/` | Written specs for owner review, e.g. the Phase 3 inner-sandbox and startup spec, and the operating-model and portability note |
 | `verify-rounds.sh`, `tests/rounds/` | Disposable round-import and recovery regressions |
 | `sandbox-task.sh`, `tools/tasks/` | Registered task plans, checked launch-handoff text, status and audit collection; no automatic agent launch |
 | `OPERATOR.md` | Outside-agent procedure, approval rules and audit boundaries |
