@@ -125,13 +125,13 @@ operations. Every command after registration checks that:
 
 - **Resetting the workspace.** `new-sandbox.sh --force` refuses while any record names
   the workspace (tests T15 and T16). A new task needs a new `SANDBOX_ROOT`.
-- **No retire command (BACKLOG S-6).** A finished task keeps its workspace blocked from
+- **No retire command (BACKLOG S-6, S-11).** A finished task keeps its workspace blocked from
   reset. `~/pera-sandbox` is named by both EEP-24 and JWA-2906.
 - **Deleting a workspace by hand.** The record then points at nothing and its commands
   fail. Published packages and `refs/sandbox/*` refs in the host repositories survive.
 - **Rebuilding the image.** The controller refuses with "Registered image changed;
   restore the pinned image before proceeding" when the tag no longer resolves to the
-  pinned ID. On 2026-09-29:
+  pinned ID (BACKLOG S-11). On 2026-09-29:
 
   | Task | Pinned image | Workspace | Version |
   |---|---|---|---|
@@ -149,7 +149,7 @@ operations. Every command after registration checks that:
 sessions share one project directory, `-workspace`, in the `pera-claude-config` volume.
 It held 18 sessions on 2026-09-29. `run-agent --continue` resumes the most recent
 conversation in that project, which may belong to a different task. Resume a task by
-session ID. This follows from how Claude Code keys sessions by working directory; it has
+session ID (BACKLOG S-12). This follows from how Claude Code keys sessions by working directory; it has
 not been tested here.
 
 ## 5. Generalizing for other teams
