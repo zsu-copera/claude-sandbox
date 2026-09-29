@@ -35,7 +35,6 @@ chat authors or enforce these role permissions.
 
 Use the trusted scaffold at `C:\work\pera\claude-sandbox`. If the outside-agent
 session starts elsewhere, read this file explicitly before operating the sandbox.
-Do not edit the generated `prj/.github/copilot-instructions.md` to install this guidance.
 
 ## Boundaries
 

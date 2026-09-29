@@ -128,9 +128,9 @@ a remembered count of which projects use which runner; it changes as projects mi
 | Resource | Use for |
 |---|---|
 | `prj/.agents/skills/agency-jsp-to-angular/` | **Start here for any JSP→Angular conversion.** Routes into the canonical docs, enforces the write-back loop and adversarial review. |
-| `Documentation/External-Team/agency/copilot-instructions.md` | Primary playbook + canonical registry of completed conversions. Read its scope-guidance table first. |
+| `Documentation/External-Team/agency/jsp-conversion-pipeline/conversion-registry.md` | Canonical registry of completed conversions. Read its scope-guidance table first. |
 | `Documentation/External-Team/agency/jsp-conversion-pipeline/JSP-to-Angular-migration-guide.md` | The migration pipeline + type-folder READMEs (Form / Display / Selector). |
-| `prj/.github/a11y.instructions.md` + `Documentation/External-Team/agency/accessibility-checkpoint/` | **Mandatory** WCAG rules for any `src/main/angular/**/*.{html,ts}` work. |
+| `Documentation/External-Team/agency/accessibility-checkpoint/a11y-quick-rules.md`, then `Documentation/Accessibility/Accessibility Standards/` | **Mandatory** WCAG rules for any `src/main/angular/**/*.{html,ts}` work: the quick rules first, then the matching sections of the standards, per the registry's element-to-section lookup. The checkpoint folder's own copies of the standards are out of date. |
 | `prj/.agents/skills/angular-developer/` | Angular best-practice references. |
 | `Documentation/External-Team/member/README.md` | **Member-portal work starts here** (ticket prefix **JWA-**). Do NOT apply the agency conversion pipeline to member work — different portal, different playbooks. |
 
@@ -188,7 +188,7 @@ it aborts in the sandbox (read-only home, no Unix-domain sockets).
 - Angular app/schematic names are unique and prefixed by the app name (`prj/Angular_README.md`).
 - Never commit build output: `target/`, `dist/`, `.angular/cache/`, `coverage/`,
   `node_modules/`, `node/`.
-- Accessibility is mandatory for template work — apply the a11y instructions.
+- Accessibility is mandatory for template work — apply the quick rules and the standards above.
 - Two repos: if you change docs, commit in `Documentation/` separately from `prj/`.
 - End your session with a summary: what was done, commits made (repo + hash + message),
   test results (exact counts), and anything deferred for on-network verification.

@@ -45,7 +45,6 @@ NODE_CACHE="$WS/.node-cache"
 [ -f "$NPMRC_SRC" ] || { echo "ERROR: $NPMRC_SRC missing — re-run new-sandbox.sh on the host" >&2; exit 1; }
 
 # Sanity-check the AI assets that are git-ignored upstream (must come from the overlay).
-[ -f "$WS/prj/.github/copilot-instructions.md" ] || echo "WARN: prj/.github overlay missing" >&2
 [ -d "$WS/prj/.agents/skills/agency-jsp-to-angular" ] || echo "WARN: agency-jsp-to-angular skill missing" >&2
 
 git config --global --add safe.directory '*' 2>/dev/null || true

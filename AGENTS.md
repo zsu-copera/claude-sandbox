@@ -67,8 +67,10 @@ procedure, `FAQ.md` for troubleshooting. Do not duplicate their content here.
    person as a default. Host-specific values are resolved at runtime or passed in.
 3. **Do not weaken an isolation invariant without a human reviewing it.** The list is in the
    next section. These were expensive to get right and several are non-obvious.
-4. **Do not edit `prj/.github/copilot-instructions.md`** anywhere. It is generated; regenerate
-   it from the canonical file in `Documentation`.
+4. **Do not reintroduce `copilot-instructions.md`**, in `prj/.github` or in `Documentation`. It
+   was retired on 2026-09-29; its registry is
+   `Documentation/External-Team/agency/jsp-conversion-pipeline/conversion-registry.md`, which is
+   edited in place and never deployed.
 5. **State what you could not verify.** Most changes here cannot be proven without a container
    run. Saying "edited, unverified, needs a container run" is correct and useful. Claiming a
    firewall change works when you did not test it is not.

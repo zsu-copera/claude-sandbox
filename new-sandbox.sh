@@ -110,11 +110,11 @@ fi
 [ -f "$WIN_M2" ] || { echo "ERROR: $WIN_M2 missing (Nexus mirror + creds needed for prepare phase)" >&2; exit 1; }
 [ -f "$WIN_NPMRC" ] || { echo "ERROR: $WIN_NPMRC missing (Nexus npm registry + auth needed for prepare phase)" >&2; exit 1; }
 # Git-ignored AI assets (finding D5). A fresh prj clone has none of them, and without them
-# the agent silently loses its instructions, a11y rules and skills, so they are required
-# unless the caller opts out.
+# the agent silently loses its skills, so they are required unless the caller opts out.
+# prj/.github is still overlaid when present, but nothing in it is required: the Copilot
+# instructions it used to hold were retired on 2026-09-29 (conversion-registry.md in
+# Documentation replaced them).
 REQUIRED_ASSETS=(
-    .github/copilot-instructions.md
-    .github/a11y.instructions.md
     .agents/skills/agency-jsp-to-angular/SKILL.md
     .agents/skills/angular-developer/SKILL.md
 )
@@ -128,8 +128,7 @@ if [ "${#missing_assets[@]}" -gt 0 ]; then
     else
         echo "ERROR: required git-ignored assets are missing from $SOURCE_ROOT/prj:" >&2
         for a in "${missing_assets[@]}"; do echo "         $a" >&2; done
-        echo "       A fresh clone never has them. Copy them from a prj checkout that does (the" >&2
-        echo "       copilot instructions are generated from Documentation's canonical file), or" >&2
+        echo "       A fresh clone never has them. Copy them from a prj checkout that does, or" >&2
         echo "       pass --allow-missing-assets to assemble without them." >&2
         exit 1
     fi

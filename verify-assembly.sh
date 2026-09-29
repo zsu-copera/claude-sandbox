@@ -39,11 +39,12 @@ printf '.github/\n.agents/skills\n' > "$SRC/prj/.gitignore"
 mkdir -p "$SRC/prj/.agents"; echo tracked > "$SRC/prj/.agents/README.md"
 git -C "$SRC/prj" add .gitignore .agents/README.md
 commit "$SRC/prj" -m "ignore AI assets"
-ASSETS=".github/copilot-instructions.md .github/a11y.instructions.md
-        .agents/skills/agency-jsp-to-angular/SKILL.md .agents/skills/angular-developer/SKILL.md"
+ASSETS=".agents/skills/agency-jsp-to-angular/SKILL.md .agents/skills/angular-developer/SKILL.md"
 for a in $ASSETS; do
     mkdir -p "$(dirname "$SRC/prj/$a")"; echo synthetic > "$SRC/prj/$a"
 done
+# prj/.github is overlaid when present but no longer required (retired 2026-09-29).
+mkdir -p "$SRC/prj/.github"; echo synthetic > "$SRC/prj/.github/local-note.md"
 echo synthetic > "$T/m2"; echo synthetic > "$T/npmrc"
 export SOURCE_ROOT=$SRC WIN_M2=$T/m2 WIN_NPMRC=$T/npmrc SANDBOX_GIT_NAME='Test Dev' \
        SANDBOX_GIT_EMAIL=dev@example.invalid XDG_STATE_HOME=$ST
@@ -145,12 +146,13 @@ expect "T27 legacy layout (no marker) accepted" 0 "Removing existing sandbox" --
 mv "$SRC/prj/.agents/skills" "$T/skills-aside"
 expect "T28 missing assets refused" 1 "angular-developer/SKILL.md" -- --force
 expect "T29 --allow-missing-assets proceeds" 0 "WARN: prj/.agents/skills/agency-jsp-to-angular/SKILL.md missing" -- --force --allow-missing-assets
-[ -f "$WS/prj/.github/copilot-instructions.md" ] && [ ! -e "$WS/prj/.agents/skills/angular-developer/SKILL.md" ] \
+[ -f "$WS/prj/.github/local-note.md" ] && [ ! -e "$WS/prj/.agents/skills/angular-developer/SKILL.md" ] \
     || bad "T29 sandbox should have .github and lack the skills"
 mv "$T/skills-aside" "$SRC/prj/.agents/skills"
-mv "$SRC/prj/.github/a11y.instructions.md" "$T/a11y"; ln -s "$T/a11y" "$SRC/prj/.github/a11y.instructions.md"
-expect "T30 symlinked asset refused" 1 "a11y.instructions.md" -- --force
-rm "$SRC/prj/.github/a11y.instructions.md"; mv "$T/a11y" "$SRC/prj/.github/a11y.instructions.md"
+A="$SRC/prj/.agents/skills/angular-developer/SKILL.md"
+mv "$A" "$T/skill"; ln -s "$T/skill" "$A"
+expect "T30 symlinked asset refused" 1 "angular-developer/SKILL.md" -- --force
+rm "$A"; mv "$T/skill" "$A"
 
 expect "T31 --discard without --force" 1 "only applies together with --force" -- --discard-unharvested
 expect "T32 unknown argument" 2 "unknown argument: --frce" -- --frce

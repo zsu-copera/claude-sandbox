@@ -1,4 +1,4 @@
-# Claude setup backlog
+ **Closed 2026-09-29 by retiring the file.** `Documentation` branch `retire-copilot-instructions`, not pushed, replaces `copilot-instructions.md` and the deploy script with `jsp-conversion-pipeline/conversion-registry.md`. The branch also carries `Popover-Documentation`'s 9 local-only commits, with `main` merged in. The local `prj/.github` copies are deleted, and the scaffold no longer requires them. |
 
 Recorded 2026-09-27, after the Phase 3 deployment and a survey of the workspace's Claude
 configuration. The owner deferred all of these for later. Sandbox security items stay in

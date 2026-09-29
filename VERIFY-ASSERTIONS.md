@@ -93,7 +93,7 @@ delegable to a cheaper agent: it needs no container, so an agent can iterate aga
 | P12 | Each warmed module has both `node/` and `node_modules/` | derive the module list from the warmed profile; `SKIP` modules outside it and say which | FAIL |
 | P13 | A node dist tarball exists in `.node-cache/` for every pinned version | existence check per version | FAIL |
 | P14 | *(retired in Phase 3)* No agent CLI is staged: `.agent-cli/` is absent after prepare, because the launchers run only the baked CLIs (N5, decision A) | `! -e .agent-cli` | FAIL |
-| P15 | `prj/.github/copilot-instructions.md` and `prj/.agents/skills/agency-jsp-to-angular` are present | these are git-ignored upstream and arrive only via the overlay; their silent absence produces a degraded sandbox | WARN |
+| P15 | `prj/.agents/skills/agency-jsp-to-angular` is present (`prj/.github/copilot-instructions.md` was retired 2026-09-29) | these are git-ignored upstream and arrive only via the overlay; their silent absence produces a degraded sandbox | WARN |
 
 ## A — After lockdown, still privileged (`verify-sandbox.sh --pre-agent`)
 
