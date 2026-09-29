@@ -240,6 +240,8 @@ complete on its own.
    - every tool call with its input, and its result with an `is_error` flag;
    - sub-agent tool calls inline, tagged with `parent_tool_use_id`;
    - background-task events, and a final result event with turns, duration and cost.
+     The cost is the CLI's estimate at API prices, not a charge. `apiKeySource: "none"`
+     in the init event means the session used the subscription login.
 2. **The CLI's own session record** in the login volume. It is
    `projects/-workspace/<session-id>.jsonl`, plus the sub-agent records under
    `projects/-workspace/<session-id>/subagents/`. Exporting only the main file misses
@@ -272,9 +274,25 @@ The session record is written by the CLI into a volume that sandboxed commands c
 and the file tools are denied. It is still not tamper-evident, and hashes taken after
 export detect only later changes.
 
+**Usage-limit stops and resuming.** First seen in EEP-24-A11Y R1 (2026-09-28): one audit
+round used a whole usage window in about an hour.
+- **Recognizing it:** the result event says `subtype: "success"` but `is_error: true`,
+  `terminal_reason: "api_error"` and `api_error_status: 429`, with a result text like
+  "You've hit your session limit · resets …". The launcher exits 1. Judge a run by
+  `is_error` and `terminal_reason`, not by `subtype`.
+- **Resuming:** after the reset, launch a new container with
+  `run-agent --resume <session-id> -p "…"` on the same workspace and login volume. Write
+  its stream and launch metadata to a separate folder (for example `resume-1/`). The
+  session ID stays the same and the CLI's session record grows across launches.
+- **Exporting:** export after the last launch. One export then covers every launch, and
+  its sub-agent records. An export taken before resuming is still worth keeping as a
+  record of the stop.
+- **Don't add the cost figures up.** A resumed run's reported cost may include the earlier
+  launch; this is unconfirmed.
+
 **Not exercised:**
 - an interactive Claude session;
-- a session long enough to compact its context;
+- a session long enough to compact its context (R1 ran 155 turns without compacting);
 - several sub-agents at once.
 
 Note any of these in the run's capture gaps.

@@ -1306,6 +1306,42 @@ Owner-approved, non-ticket probe for OPERATOR's execution-evidence gate (backlog
 - **Not exercised:** interactive sessions, compaction, concurrent sub-agents. The recipe is
   in OPERATOR, under "Claude Code session evidence".
 
+### EEP-24-A11Y R1: first live ticket round on Claude Code, 2026-09-28
+
+Audit-only follow-up to EEP-24 (backlog S-2), run by the ticket lead on workspace
+`~/pera-sandbox-eep24` (agencyWWW) through `sandbox-task.sh`: one round sent, applied and
+collected. It was a brief-only send without `--handoff`, so the task record stays at
+version 1. `prj` stayed at its audit base. Read back afterwards from the private evidence
+folder by the scaffold session; the audit's content is not assessed here.
+- **Runtime:** two headless launches, both on image `6fa46c4bb3c3`, Claude Code 2.1.283,
+  `--model claude-opus-5-5`, with the subscription login (`apiKeySource: "none"`).
+  - The firewall self-test passed before each launch.
+  - The managed policy blocked the login account's claude.ai MCP connector.
+  - The agent never passed `dangerouslyDisableSandbox`.
+- **Inner sandbox:**
+  - Karma ran inside Claude's Bash sandbox on the headless shell, reaching
+    `TOTAL: 120 SUCCESS` each time; the first live-round confirmation of G2. No Maven
+    build ran in this round.
+  - One file-tool read of `~/.claude/projects/…/tool-results/` was denied by the managed
+    rules. The CLI had saved an oversized output there and pointed the agent at it
+    (backlog S-10).
+- **Usage-limit stop and resume:**
+  - The first launch stopped after 155 turns and 62 minutes on API status 429 (session
+    limit). Its result said `subtype: "success"` with `is_error: true`, and the launcher
+    exited 1.
+  - A second container resumed the same session with `--resume` and exited 0.
+  - No compaction occurred in either launch.
+- **Review sub-agents:** both were dispatched with `model: "opus"` and ran on
+  `claude-opus-5-5` (the B1 workaround).
+- **Evidence:**
+  - Both session exports verify: 12/12 before the resume and 24/24 after it. The final
+    export holds both sub-agent records.
+  - The three review folders' checksum files verify.
+  - `reviews/pass2` and its `cli-session/` were mode 777, and `reviews/` 755, under a
+    700 parent. The ticket lead was asked to tighten them.
+- **Cost:** the result events report estimates at API prices, not charges. The resumed
+  launch's figure may include the first launch's.
+
 ## Deliberately not asserted
 
 - **DNS egress being open.** Accepted by design; A12 asserts it works rather than that it is

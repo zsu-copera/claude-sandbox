@@ -25,8 +25,8 @@ Details are in SECURITY-REVIEW's open items and in VERIFY-ASSERTIONS.
 
 | # | Item | Status |
 |---|---|---|
-| S-1 | **Execution evidence for Claude Code sessions.** OPERATOR's capture gate had been demonstrated for Copilot only. | **Demonstrated 2026-09-27** for headless sessions (OPERATOR, "Claude Code session evidence"). Interactive sessions and compaction not exercised. |
-| S-2 | **A live ticket round with Claude Code** under the context-aware workflow. Every live round so far ran on Copilot, including JWA-2906, whose Karma run therefore never met Claude's sandbox (spec §15). | To be exercised with the EEP-24 follow-up |
+| S-1 | **Execution evidence for Claude Code sessions.** OPERATOR's capture gate had been demonstrated for Copilot only. | **Demonstrated 2026-09-27** for headless sessions (OPERATOR, "Claude Code session evidence"). Resuming after a usage-limit stop was added 2026-09-28, from EEP-24-A11Y R1. Interactive sessions and compaction are not exercised. |
+| S-2 | **A live ticket round with Claude Code** under the context-aware workflow. Every live round so far ran on Copilot, including JWA-2906, whose Karma run therefore never met Claude's sandbox (spec §15). | **Partly exercised 2026-09-28** by EEP-24-A11Y R1, audit only (VERIFY-ASSERTIONS). It used a brief-only send without `--handoff`, and Karma passed inside the inner sandbox. Still to come: a context-aware send, a round that changes code, and a Maven build under Claude. |
 | S-3 | **Reproducible image inputs** (D2/D3). Each rebuild installs the current Claude Code and Copilot releases. | Open |
 | S-4 | **G1 hardening.** Have the wrapper repeat the startup checks at the next rebuild. Mount `.claude/` read-only only if an in-session write route appears. | At the next rebuild |
 | S-5 | **Small checks on the current image:** an interactive Copilot session, Copilot `/model` on a fresh volume, `/status` on Claude Code 2.1.283. | Open, minutes each |
@@ -34,3 +34,4 @@ Details are in SECURITY-REVIEW's open items and in VERIFY-ASSERTIONS.
 | S-7 | **Runtime checks and CI** (V1/N2, CI deferred), **transcript retention and export** (V3), **a harvest helper** (V4, partly `sandbox-task.sh collect`). | Longer term |
 | S-8 | **Security/IT sign-off for autonomous runs** (C5). A request packet is drafted. | Deferred by the owner |
 | S-9 | **Owner actions:** delete the retired `Documentation` branch `claude-sandbox`; protect or move this repository before wider distribution; licensing, retention and credential governance evidence (I5). | Open |
+| S-10 | **The agent can't read back an oversized tool output.** The CLI saves it under `~/.claude/projects/…/tool-results/` and tells the agent to Read it there, but the managed rules deny file tools on `~/.claude`. This is correct for isolation. It cost one failed call in EEP-24-A11Y R1. | Suggested: `overlay/CLAUDE.md` tells the agent to send large output to a file under `/workspace` from the start. The policy stays as it is. |

@@ -521,6 +521,9 @@ The JWA-2906 round that passed this suite ran on Copilot CLI 1.0.83, which has n
 sandbox (VERIFY-ASSERTIONS, JWA-2906 field evidence). No Claude Code session has yet run a
 Karma suite in a live ticket round.
 
+**Update 2026-09-28:** EEP-24-A11Y R1 did. The agency suite reached `TOTAL: 120 SUCCESS` inside
+Claude's sandbox on `6fa46c4bb3c3`, on the headless shell (VERIFY-ASSERTIONS).
+
 **Owner decision (option A).** Install EPEL's `chromium-headless` and point `CHROME_BIN` at
 its headless shell, which has no single-instance lock. The sandbox policy is unchanged. In
 the real sandbox, the PSC v2 suite ran `TOTAL: 270 SUCCESS` both with and without an `XDG`

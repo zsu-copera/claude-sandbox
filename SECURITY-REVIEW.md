@@ -42,8 +42,11 @@ Record the sign-off here when it is given.
 - An interactive Copilot session. Only headless autopilot sessions were observed on it.
 - Copilot `/model` on a new volume shows the seeded `claude-opus-5.5` (C3; the dotted ID is inferred from the CLI bundle).
 - `/status` on Claude Code 2.1.283. It was observed on 2.1.282.
-- The ticket lead's first real task session, as confirmation. The owner accepted the build
-  rehearsal as the supervised-build check (spec §15).
+
+**Confirmed 2026-09-28:** the ticket lead's first real task session, EEP-24-A11Y R1, was audit
+only. It ran Karma inside Claude's sandbox on this image, reaching `TOTAL: 120 SUCCESS`, and
+no Maven build ran (VERIFY-ASSERTIONS). The owner had already accepted the build rehearsal as
+the supervised-build check (spec §15).
 
 Baked CLIs on `6fa46c4bb3c3`: Claude Code 2.1.283 and Copilot 1.0.83. The workspace-staged
 copies are retired and removed, so the 1.0.86 discrepancy recorded earlier no longer affects
