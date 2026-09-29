@@ -16,7 +16,7 @@ Nexus). Agent sessions run behind a locked-down firewall and only need the agent
 API endpoints reachable.
 
 **Which agent should I use — Claude Code or Copilot CLI?**
-Whichever you're licensed for; both drive Claude Opus 4.8 against the same sandbox and
+Whichever you're licensed for; both drive Claude Opus (5.5 as of 2026-09-29) against the same sandbox and
 the same instructions. Claude sessions have the tighter network posture (Anthropic-only),
 so prefer `run-agent` for unattended overnight runs. See README §4b.
 

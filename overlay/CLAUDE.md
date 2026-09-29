@@ -42,6 +42,12 @@ workspace. This file replaces the normal Windows workspace instructions.
   policy is root-owned, and the next session's startup check refuses to start if it finds these changed. Claude
   Code runs Bash commands in a sandbox that can write only to `/workspace` and `/tmp`. If a
   command fails because of it, report the failure rather than working around it.
+- **Send long output to a file you can read.** When a command's output is too large, Claude
+  Code saves it under `~/.claude/` and says to read it there, but the file tools are denied
+  in `~/.claude/`. Redirect any command likely to print a lot to a file from the start:
+  under `/workspace`, where the brief asks for logs, or `/tmp` for scratch. Then read that
+  file. If a saved output is out of reach, re-run the command with its output redirected
+  rather than trying to reach `~/.claude/`.
 - **Unit tests only.** Integration tests need the PERA AS400/Oracle databases, which are
   unreachable here **by design**. Never pass `-Drun.integration.tests=true`. If something can
   only be verified against a live DB or deployed server, record it in the ticket's
