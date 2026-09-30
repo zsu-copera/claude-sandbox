@@ -340,14 +340,25 @@ user. No workspace reset or warming is part of registration.
 
 ## Send a committed brief
 
-The ticket lead first writes and commits the intended brief in its source
-repository. Commit only the intended files; do not stage every change in that repo.
-Before preparing the plan, assemble the complete handoff described below.
+The ticket lead first drafts the brief. Verify factual claims about existing code
+at the stated baseline commit and cite the file and location. A claim remembered
+from an earlier round is not evidence about the current baseline. Mark unresolved
+claims explicitly rather than turning them into implementation instructions or
+acceptance criteria.
 
-Verify factual claims about existing code at the stated baseline commit and cite
-the file and location. A claim remembered from an earlier round is not evidence
-about the current baseline. Mark unresolved claims explicitly rather than turning
-them into implementation instructions or acceptance criteria.
+**Review before committing.** Present the draft to the designated human before
+committing it. The human may also have other agent reviewers read it; their
+findings come back to the lead, which revises the draft, and the loop repeats
+until the human accepts it. Reviewers return findings only: the lead stays the
+sole writer to the host checkout. Record which version was reviewed, for example
+the blob hash or the exact diff shown. This is a review of the brief's content,
+not an approval of a plan. The plan approval below comes later, is bound to the
+committed bytes, and is still required.
+
+Then commit the reviewed brief in its source repository. Commit only the intended
+files; do not stage every change in that repo. If the brief changes after review,
+review it again before committing. Before preparing the plan, assemble the
+complete handoff described below.
 
 ### Select context and assign document ownership
 
@@ -532,11 +543,15 @@ Present one compact review summary:
 | Item | Include |
 |---|---|
 | Destination | Task, round, workspace and target branches |
-| Inputs | Selected paths and pinned source commits, grouped by repository |
+| Inputs | Selected paths and pinned source commits, grouped by repository, with each selected brief's blob so the human can confirm it is the version they reviewed |
 | Context and write-back | Required references, document owners, known drift or unknown versions, and the reconciliation decision |
 | Effect | Which repositories will import and which remain unchanged |
 | Safety | Any blocking dirty/running/recovery state; no prepare or reset |
 | Approval | The full plan ID and a copyable phrase: `Approve apply PLAN_ID`, with the actual ID substituted |
+
+Before presenting it, the lead compares each selected brief's pinned blob with the
+version the human reviewed. If they differ, the human reviews the committed version
+first; do not ask for approval of a send the human has not reviewed.
 
 The operator returns this summary to the human-facing lead session. The lead must
 obtain the designated human's approval of the exact plan in that session and then
