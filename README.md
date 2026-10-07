@@ -2,6 +2,8 @@
 
 > **New here? Start with [QUICKSTART.md](QUICKSTART.md)** — 4 commands + one login.
 > Questions? Check the [FAQ](FAQ.md) first.
+> **How each step works:** [WALKTHROUGH.md](WALKTHROUGH.md) follows one round end to end,
+> from assembly to integration, with the mechanism and refusals behind every command.
 > **Security status:** the current work list is
 > [Open items in SECURITY-REVIEW.md](SECURITY-REVIEW.md#open-items-as-of-2026-09-23).
 > To update an existing sandbox's image, follow the
@@ -414,6 +416,7 @@ separate decisions.
 | File | Role |
 |---|---|
 | `QUICKSTART.md` / `FAQ.md` | Newcomer path / common questions & troubleshooting |
+| `WALKTHROUGH.md` | One round step by step: who acts, the command, how it works and when it refuses |
 | `new-sandbox.sh` | Assemble `~/pera-sandbox` inside the WSL distro (**primary path**) |
 | `.devcontainer/{devcontainer.json,Dockerfile}` | Container definition (CentOS Stream 9) |
 | `container/init-firewall.sh` | Serialized `open` \| `lockdown [domains...]`; durable one-way state, staged refresh, REJECT |
